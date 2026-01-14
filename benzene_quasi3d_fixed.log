@@ -1,0 +1,231 @@
+
+======================================================================
+IETS SIMULATION: Benzene on GaAs/AlAs RTD (Quasi-3D)
+======================================================================
+
+Configuration:
+  Device: GaAs_AlAs_symmetric
+  Molecule: Benzene
+  Quasi-3D: 3×3 = 9 transverse modes
+  Energy grid: 50 points (-0.2 to 1.0 eV)
+  Bias sweep: 7 points (0.0 to 0.3 V)
+  SCBA: max 20 iterations, tol=1e-03
+
+======================================================================
+RUNNING SIMULATION...
+======================================================================
+
+======================================================================
+IETS SIMULATION: Benzene on GaAs_AlAs_symmetric
+======================================================================
+
+[1/5] Setting up device and molecule...
+  Transverse modes: 9 total (3×3)
+    Mode energies: 0.011 to 0.101 meV
+    Dimensions: Ly=1.00 µm, Lz=1.00 µm
+  Device: 71 grid points, 21.0 nm
+  Molecule: Benzene (5 vibrational modes)
+  Total phonon modes: 6 (1 bulk + 5 molecular)
+  Mode-dependent molecular coupling:
+    First vibrational mode: D_min=0.000 meV, D_max=5.000 meV
+    Modes with >1% coupling: 4/9
+
+[2/5] Creating energy grid...
+  Energy range: -0.20 to 1.00 eV
+  Points: 50 (dE = 24.5 meV)
+
+[3/5] Computing contact self-energies...
+  Contact broadenings computed for 50 energies
+
+[4/5] Running bias sweep...
+  Voltage: 0.00 to 0.30 V (7 points)
+
+  --- Bias 1/7: V = 0.000 V ---
+  Multimode SCBA: 9 transverse modes, 50 energies, 71 sites
+  Iteration   0: residual = 3.615487e+01
+  Iteration   1: residual = 2.349488e+01
+  Iteration   2: residual = 1.495846e+01
+  Iteration   3: residual = 9.548273e+00
+  Iteration   4: residual = 7.396166e+00
+  Iteration   5: residual = 5.862059e+00
+  Iteration  10: residual = 1.539237e+00
+  Iteration  15: residual = 4.873529e-01
+  ⚠ Did not converge after 20 iterations (residual = 1.960411e-01)
+  ⚠ I = 0.000 pA (iterations: 20)
+
+  --- Bias 2/7: V = 0.050 V ---
+  Multimode SCBA: 9 transverse modes, 50 energies, 71 sites
+  Iteration   0: residual = 3.615487e+01
+  Iteration   1: residual = 2.349488e+01
+  Iteration   2: residual = 1.495846e+01
+  Iteration   3: residual = 9.548273e+00
+  Iteration   4: residual = 7.396166e+00
+  Iteration   5: residual = 5.862059e+00
+  Iteration  10: residual = 1.539237e+00
+  Iteration  15: residual = 4.873529e-01
+  ⚠ Did not converge after 20 iterations (residual = 1.960411e-01)
+  ⚠ I = 8043.713 pA (iterations: 20)
+
+  --- Bias 3/7: V = 0.100 V ---
+  Multimode SCBA: 9 transverse modes, 50 energies, 71 sites
+  Iteration   0: residual = 3.615487e+01
+  Iteration   1: residual = 2.349488e+01
+  Iteration   2: residual = 1.495846e+01
+  Iteration   3: residual = 9.548273e+00
+  Iteration   4: residual = 7.396166e+00
+  Iteration   5: residual = 5.862059e+00
+  Iteration  10: residual = 1.539237e+00
+  Iteration  15: residual = 4.873529e-01
+  ⚠ Did not converge after 20 iterations (residual = 1.960411e-01)
+  ⚠ I = 23743.241 pA (iterations: 20)
+
+  --- Bias 4/7: V = 0.150 V ---
+  Multimode SCBA: 9 transverse modes, 50 energies, 71 sites
+  Iteration   0: residual = 3.615487e+01
+  Iteration   1: residual = 2.349488e+01
+  Iteration   2: residual = 1.495846e+01
+  Iteration   3: residual = 9.548273e+00
+  Iteration   4: residual = 7.396166e+00
+  Iteration   5: residual = 5.862059e+00
+  Iteration  10: residual = 1.539237e+00
+  Iteration  15: residual = 4.873529e-01
+  ⚠ Did not converge after 20 iterations (residual = 1.960411e-01)
+  ⚠ I = 61707.837 pA (iterations: 20)
+
+  --- Bias 5/7: V = 0.200 V ---
+  Multimode SCBA: 9 transverse modes, 50 energies, 71 sites
+  Iteration   0: residual = 3.615487e+01
+  Iteration   1: residual = 2.349488e+01
+  Iteration   2: residual = 1.495846e+01
+  Iteration   3: residual = 9.548273e+00
+  Iteration   4: residual = 7.396166e+00
+  Iteration   5: residual = 5.862059e+00
+  Iteration  10: residual = 1.539237e+00
+  Iteration  15: residual = 4.873529e-01
+  ⚠ Did not converge after 20 iterations (residual = 1.960411e-01)
+  ⚠ I = 157702.778 pA (iterations: 20)
+
+  --- Bias 6/7: V = 0.250 V ---
+  Multimode SCBA: 9 transverse modes, 50 energies, 71 sites
+  Iteration   0: residual = 3.615487e+01
+  Iteration   1: residual = 2.349488e+01
+  Iteration   2: residual = 1.495846e+01
+  Iteration   3: residual = 9.548273e+00
+  Iteration   4: residual = 7.396166e+00
+  Iteration   5: residual = 5.862059e+00
+  Iteration  10: residual = 1.539237e+00
+  Iteration  15: residual = 4.873529e-01
+  ⚠ Did not converge after 20 iterations (residual = 1.960411e-01)
+  ⚠ I = 402793.530 pA (iterations: 20)
+
+  --- Bias 7/7: V = 0.300 V ---
+  Multimode SCBA: 9 transverse modes, 50 energies, 71 sites
+  Iteration   0: residual = 3.615487e+01
+  Iteration   1: residual = 2.349488e+01
+  Iteration   2: residual = 1.495846e+01
+  Iteration   3: residual = 9.548273e+00
+  Iteration   4: residual = 7.396166e+00
+  Iteration   5: residual = 5.862059e+00
+  Iteration  10: residual = 1.539237e+00
+  Iteration  15: residual = 4.873529e-01
+  ⚠ Did not converge after 20 iterations (residual = 1.960411e-01)
+  ⚠ I = 1016764.743 pA (iterations: 20)
+
+[5/5] Computing IETS spectrum...
+  dI/dV range: 1.609e-07 to 1.228e-05 S
+  d²I/dV² range: 1.531e-06 to 8.869e-05 S/V
+  Positive features: 7/7
+
+======================================================================
+SIMULATION COMPLETE in 342.3 seconds
+======================================================================
+
+
+======================================================================
+SIMULATION COMPLETE!
+======================================================================
+
+Total time: 342.3 seconds (5.70 minutes)
+Time per bias point: 48.9 seconds
+
+======================================================================
+RESULTS ANALYSIS
+======================================================================
+
+I-V Curve:
+  Voltage range: 0.000 to 0.300 V
+  Current range: 0.000 to 1016.765 nA
+
+Equilibrium check:
+  I(V=0) = 0.000000 pA
+  ✓ Perfect equilibrium (I = 0 at V = 0)
+
+  V (V)     I (nA)    dI/dV (µS)   d²I/dV² (µS/V)
+  --------------------------------------------------
+  0.000      0.000      0.161        1.531
+  0.050      8.044      0.237        3.758
+  0.100     23.743      0.537       11.022
+  0.150     61.708      1.340       28.742
+  0.200    157.703      3.411       72.510
+  0.250    402.794      8.591       88.686
+  0.300    1016.765     12.279       73.776
+
+IETS Spectrum (d²I/dV²):
+  Range: 1.531 to 88.686 µS/V
+  Positive features: 7/7 points
+  Maximum at: V = 0.250 V, d²I/dV² = 88.686 µS/V
+
+SCBA Convergence:
+  Converged bias points: 0/7
+  Average iterations: 20.0
+
+Transverse Modes:
+  Total: 9
+  Energies: 0.011 to 0.101 meV
+
+======================================================================
+SAVING RESULTS
+======================================================================
+
+Results saved to: results/output.csv
+
+Result dictionary keys:
+  config: SimulationConfig
+  device: dict
+  molecule: dict
+  grid: dict
+  phonon_modes: list
+  E_array: array (50,)
+  V_array: array (7,)
+  I_array: array (7,)
+  dIdV: array (7,)
+  d2IdV2: array (7,)
+  scba_results: list
+  elapsed_time: float
+
+======================================================================
+PERFORMANCE ASSESSMENT
+======================================================================
+
+Computational Cost:
+  Total time: 342.3 seconds
+  Time per bias point: 48.9 seconds
+  Estimated for 21 bias points: 1026.8 seconds (17.1 minutes)
+
+  ⚠ Performance is SLOW (> 30 sec/point)
+  Recommendation: Implement hybrid mode selection (7-8x speedup)
+
+======================================================================
+PHYSICS VALIDATION
+======================================================================
+
+Checking physical correctness:
+  ✓ Detailed balance: I = 0 at V = 0
+  ✓ Current increases with bias
+  ✓ Forward bias gives positive current
+  ⚠ Current magnitude unusual (1016.8 nA)
+
+======================================================================
+✓ SIMULATION SUCCESSFUL!
+======================================================================
+

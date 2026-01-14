@@ -1,0 +1,380 @@
+Traceback (most recent call last):
+  File "/Users/abhineet/Downloads/quantum_enose/run_patil_1d.py", line 128, in <module>
+    Gamma1 = scba_eq['Gamma1_array']
+KeyError: 'Gamma1_array'
+
+======================================================================
+1D IETS SIMULATION: Patil et al. Parameters
+======================================================================
+
+Configuration:
+  Device: GaAs_AlAs_symmetric
+  Molecule: Patil_2modes
+    Mode 1: 90 meV, coupling 100 meV
+    Mode 2: 175 meV, coupling 100 meV
+  Mode: 1D (matching Patil paper)
+  Energy grid: 200 points (-0.2 to 0.8 eV)
+  Bias sweep: 31 points (0.0 to 0.3 V)
+  Temperature: 300 K
+
+======================================================================
+RUNNING 1D SCBA SIMULATION...
+======================================================================
+
+======================================================================
+IETS SIMULATION: Patil_2modes on GaAs_AlAs_symmetric
+======================================================================
+
+[1/5] Setting up device and molecule...
+  Mode: 1D transport (no transverse modes)
+  Device: 71 grid points, 21.0 nm
+  Molecule: Patil_2modes (2 vibrational modes)
+  Total phonon modes: 2 (1 bulk + 2 molecular)
+
+[2/5] Creating energy grid...
+  Energy range: -0.20 to 0.80 eV
+  Points: 200 (dE = 5.0 meV)
+
+[3/5] Computing contact self-energies...
+  Contact broadenings computed for 200 energies
+
+[4/5] Running bias sweep...
+  Voltage: 0.00 to 0.30 V (31 points)
+
+  --- Bias 1/31: V = 0.000 V ---
+  Iteration   0: residual = 7.175920e+00
+  Iteration   1: residual = 5.024740e+00
+  Iteration   2: residual = 3.518526e+00
+  Iteration   3: residual = 2.463844e+00
+  Iteration   4: residual = 1.725314e+00
+  Iteration  10: residual = 2.034400e-01
+  ✓ Converged at iteration 19 (residual = 8.240418e-03)
+  ✓ I = 0.000 pA (iterations: 20)
+
+  --- Bias 2/31: V = 0.010 V ---
+  Iteration   0: residual = 7.175928e+00
+  Iteration   1: residual = 5.024764e+00
+  Iteration   2: residual = 3.518572e+00
+  Iteration   3: residual = 2.463892e+00
+  Iteration   4: residual = 1.725360e+00
+  Iteration  10: residual = 2.034560e-01
+  ✓ Converged at iteration 19 (residual = 8.241683e-03)
+  ✓ I = 1525.312 pA (iterations: 20)
+
+  --- Bias 3/31: V = 0.020 V ---
+  Iteration   0: residual = 7.175940e+00
+  Iteration   1: residual = 5.024797e+00
+  Iteration   2: residual = 3.518628e+00
+  Iteration   3: residual = 2.463950e+00
+  Iteration   4: residual = 1.725417e+00
+  Iteration  10: residual = 2.034758e-01
+  ✓ Converged at iteration 19 (residual = 8.243252e-03)
+  ✓ I = 3082.244 pA (iterations: 20)
+
+  --- Bias 4/31: V = 0.030 V ---
+  Iteration   0: residual = 7.175954e+00
+  Iteration   1: residual = 5.024845e+00
+  Iteration   2: residual = 3.518695e+00
+  Iteration   3: residual = 2.464022e+00
+  Iteration   4: residual = 1.725485e+00
+  Iteration  10: residual = 2.035004e-01
+  ✓ Converged at iteration 19 (residual = 8.245130e-03)
+  ✓ I = 4701.380 pA (iterations: 20)
+
+  --- Bias 5/31: V = 0.040 V ---
+  Iteration   0: residual = 7.175972e+00
+  Iteration   1: residual = 5.024904e+00
+  Iteration   2: residual = 3.518773e+00
+  Iteration   3: residual = 2.464107e+00
+  Iteration   4: residual = 1.725565e+00
+  Iteration  10: residual = 2.035298e-01
+  ✓ Converged at iteration 19 (residual = 8.247320e-03)
+  ✓ I = 6411.062 pA (iterations: 20)
+
+  --- Bias 6/31: V = 0.050 V ---
+  Iteration   0: residual = 7.175993e+00
+  Iteration   1: residual = 5.024974e+00
+  Iteration   2: residual = 3.518865e+00
+  Iteration   3: residual = 2.464206e+00
+  Iteration   4: residual = 1.725658e+00
+  Iteration  10: residual = 2.035638e-01
+  ✓ Converged at iteration 19 (residual = 8.249853e-03)
+  ✓ I = 8236.163 pA (iterations: 20)
+
+  --- Bias 7/31: V = 0.060 V ---
+  Iteration   0: residual = 7.176017e+00
+  Iteration   1: residual = 5.025054e+00
+  Iteration   2: residual = 3.518973e+00
+  Iteration   3: residual = 2.464319e+00
+  Iteration   4: residual = 1.725775e+00
+  Iteration  10: residual = 2.036036e-01
+  ✓ Converged at iteration 19 (residual = 8.252715e-03)
+  ✓ I = 10196.799 pA (iterations: 20)
+
+  --- Bias 8/31: V = 0.070 V ---
+  Iteration   0: residual = 7.176046e+00
+  Iteration   1: residual = 5.025144e+00
+  Iteration   2: residual = 3.519095e+00
+  Iteration   3: residual = 2.464450e+00
+  Iteration   4: residual = 1.725912e+00
+  Iteration  10: residual = 2.036484e-01
+  ✓ Converged at iteration 19 (residual = 8.255959e-03)
+  ✓ I = 12307.088 pA (iterations: 20)
+
+  --- Bias 9/31: V = 0.080 V ---
+  Iteration   0: residual = 7.176079e+00
+  Iteration   1: residual = 5.025244e+00
+  Iteration   2: residual = 3.519230e+00
+  Iteration   3: residual = 2.464611e+00
+  Iteration   4: residual = 1.726071e+00
+  Iteration  10: residual = 2.036977e-01
+  ✓ Converged at iteration 19 (residual = 8.259548e-03)
+  ✓ I = 14574.119 pA (iterations: 20)
+
+  --- Bias 10/31: V = 0.090 V ---
+  Iteration   0: residual = 7.176118e+00
+  Iteration   1: residual = 5.025354e+00
+  Iteration   2: residual = 3.519379e+00
+  Iteration   3: residual = 2.464791e+00
+  Iteration   4: residual = 1.726249e+00
+  Iteration  10: residual = 2.037512e-01
+  ✓ Converged at iteration 19 (residual = 8.263378e-03)
+  ✓ I = 16997.392 pA (iterations: 20)
+
+  --- Bias 11/31: V = 0.100 V ---
+  Iteration   0: residual = 7.176163e+00
+  Iteration   1: residual = 5.025474e+00
+  Iteration   2: residual = 3.519558e+00
+  Iteration   3: residual = 2.464996e+00
+  Iteration   4: residual = 1.726438e+00
+  Iteration  10: residual = 2.038075e-01
+  ✓ Converged at iteration 19 (residual = 8.267395e-03)
+  ✓ I = 19568.959 pA (iterations: 20)
+
+  --- Bias 12/31: V = 0.110 V ---
+  Iteration   0: residual = 7.176216e+00
+  Iteration   1: residual = 5.025603e+00
+  Iteration   2: residual = 3.519753e+00
+  Iteration   3: residual = 2.465212e+00
+  Iteration   4: residual = 1.726644e+00
+  Iteration  10: residual = 2.038657e-01
+  ✓ Converged at iteration 19 (residual = 8.271600e-03)
+  ✓ I = 22274.505 pA (iterations: 20)
+
+  --- Bias 13/31: V = 0.120 V ---
+  Iteration   0: residual = 7.176277e+00
+  Iteration   1: residual = 5.025741e+00
+  Iteration   2: residual = 3.519970e+00
+  Iteration   3: residual = 2.465436e+00
+  Iteration   4: residual = 1.726857e+00
+  Iteration  10: residual = 2.039246e-01
+  ✓ Converged at iteration 19 (residual = 8.275760e-03)
+  ✓ I = 25095.434 pA (iterations: 20)
+
+  --- Bias 14/31: V = 0.130 V ---
+  Iteration   0: residual = 7.176347e+00
+  Iteration   1: residual = 5.025886e+00
+  Iteration   2: residual = 3.520194e+00
+  Iteration   3: residual = 2.465672e+00
+  Iteration   4: residual = 1.727072e+00
+  Iteration  10: residual = 2.039825e-01
+  ✓ Converged at iteration 19 (residual = 8.279763e-03)
+  ✓ I = 28011.877 pA (iterations: 20)
+
+  --- Bias 15/31: V = 0.140 V ---
+  Iteration   0: residual = 7.176428e+00
+  Iteration   1: residual = 5.026053e+00
+  Iteration   2: residual = 3.520423e+00
+  Iteration   3: residual = 2.465909e+00
+  Iteration   4: residual = 1.727287e+00
+  Iteration  10: residual = 2.040381e-01
+  ✓ Converged at iteration 19 (residual = 8.283501e-03)
+  ✓ I = 31006.341 pA (iterations: 20)
+
+  --- Bias 16/31: V = 0.150 V ---
+  Iteration   0: residual = 7.176531e+00
+  Iteration   1: residual = 5.026235e+00
+  Iteration   2: residual = 3.520664e+00
+  Iteration   3: residual = 2.466146e+00
+  Iteration   4: residual = 1.727495e+00
+  Iteration  10: residual = 2.040905e-01
+  ✓ Converged at iteration 19 (residual = 8.286861e-03)
+  ✓ I = 34067.595 pA (iterations: 20)
+
+  --- Bias 17/31: V = 0.160 V ---
+  Iteration   0: residual = 7.176648e+00
+  Iteration   1: residual = 5.026431e+00
+  Iteration   2: residual = 3.520902e+00
+  Iteration   3: residual = 2.466373e+00
+  Iteration   4: residual = 1.727692e+00
+  Iteration  10: residual = 2.041376e-01
+  ✓ Converged at iteration 19 (residual = 8.290192e-03)
+  ✓ I = 37194.357 pA (iterations: 20)
+
+  --- Bias 18/31: V = 0.170 V ---
+  Iteration   0: residual = 7.176779e+00
+  Iteration   1: residual = 5.026633e+00
+  Iteration   2: residual = 3.521133e+00
+  Iteration   3: residual = 2.466586e+00
+  Iteration   4: residual = 1.727878e+00
+  Iteration  10: residual = 2.041788e-01
+  ✓ Converged at iteration 19 (residual = 8.293436e-03)
+  ✓ I = 40398.441 pA (iterations: 20)
+
+  --- Bias 19/31: V = 0.180 V ---
+  Iteration   0: residual = 7.176927e+00
+  Iteration   1: residual = 5.026836e+00
+  Iteration   2: residual = 3.521358e+00
+  Iteration   3: residual = 2.466786e+00
+  Iteration   4: residual = 1.728048e+00
+  Iteration  10: residual = 2.042130e-01
+  ✓ Converged at iteration 19 (residual = 8.296367e-03)
+  ✓ I = 43707.180 pA (iterations: 20)
+
+  --- Bias 20/31: V = 0.190 V ---
+  Iteration   0: residual = 7.177094e+00
+  Iteration   1: residual = 5.027053e+00
+  Iteration   2: residual = 3.521573e+00
+  Iteration   3: residual = 2.466974e+00
+  Iteration   4: residual = 1.728202e+00
+  Iteration  10: residual = 2.042406e-01
+  ✓ Converged at iteration 19 (residual = 8.299049e-03)
+  ✓ I = 47165.172 pA (iterations: 20)
+
+  --- Bias 21/31: V = 0.200 V ---
+  Iteration   0: residual = 7.177293e+00
+  Iteration   1: residual = 5.027281e+00
+  Iteration   2: residual = 3.521783e+00
+  Iteration   3: residual = 2.467151e+00
+  Iteration   4: residual = 1.728342e+00
+  Iteration  10: residual = 2.042612e-01
+  ✓ Converged at iteration 19 (residual = 8.300936e-03)
+  ✓ I = 50835.517 pA (iterations: 20)
+
+  --- Bias 22/31: V = 0.210 V ---
+  Iteration   0: residual = 7.177523e+00
+  Iteration   1: residual = 5.027520e+00
+  Iteration   2: residual = 3.521991e+00
+  Iteration   3: residual = 2.467316e+00
+  Iteration   4: residual = 1.728467e+00
+  Iteration  10: residual = 2.042820e-01
+  ✓ Converged at iteration 19 (residual = 8.302392e-03)
+  ✓ I = 54800.833 pA (iterations: 20)
+
+  --- Bias 23/31: V = 0.220 V ---
+  Iteration   0: residual = 7.177785e+00
+  Iteration   1: residual = 5.027773e+00
+  Iteration   2: residual = 3.522198e+00
+  Iteration   3: residual = 2.467474e+00
+  Iteration   4: residual = 1.728582e+00
+  Iteration  10: residual = 2.043033e-01
+  ✓ Converged at iteration 19 (residual = 8.303303e-03)
+  ✓ I = 59164.354 pA (iterations: 20)
+
+  --- Bias 24/31: V = 0.230 V ---
+  Iteration   0: residual = 7.178101e+00
+  Iteration   1: residual = 5.028054e+00
+  Iteration   2: residual = 3.522415e+00
+  Iteration   3: residual = 2.467630e+00
+  Iteration   4: residual = 1.728688e+00
+  Iteration  10: residual = 2.043219e-01
+  ✓ Converged at iteration 19 (residual = 8.303482e-03)
+  ✓ I = 64051.374 pA (iterations: 20)
+
+  --- Bias 25/31: V = 0.240 V ---
+  Iteration   0: residual = 7.178449e+00
+  Iteration   1: residual = 5.028348e+00
+  Iteration   2: residual = 3.522631e+00
+  Iteration   3: residual = 2.467779e+00
+  Iteration   4: residual = 1.728786e+00
+  Iteration  10: residual = 2.043450e-01
+  ✓ Converged at iteration 19 (residual = 8.302828e-03)
+  ✓ I = 69611.193 pA (iterations: 20)
+
+  --- Bias 26/31: V = 0.250 V ---
+  Iteration   0: residual = 7.178834e+00
+  Iteration   1: residual = 5.028661e+00
+  Iteration   2: residual = 3.522853e+00
+  Iteration   3: residual = 2.467927e+00
+  Iteration   4: residual = 1.728902e+00
+  Iteration  10: residual = 2.043647e-01
+  ✓ Converged at iteration 19 (residual = 8.301417e-03)
+  ✓ I = 76019.687 pA (iterations: 20)
+
+  --- Bias 27/31: V = 0.260 V ---
+  Iteration   0: residual = 7.179267e+00
+  Iteration   1: residual = 5.029003e+00
+  Iteration   2: residual = 3.523089e+00
+  Iteration   3: residual = 2.468109e+00
+  Iteration   4: residual = 1.729037e+00
+  Iteration  10: residual = 2.043834e-01
+  ✓ Converged at iteration 19 (residual = 8.299133e-03)
+  ✓ I = 83482.475 pA (iterations: 20)
+
+  --- Bias 28/31: V = 0.270 V ---
+  Iteration   0: residual = 7.179756e+00
+  Iteration   1: residual = 5.029381e+00
+  Iteration   2: residual = 3.523355e+00
+  Iteration   3: residual = 2.468326e+00
+  Iteration   4: residual = 1.729214e+00
+  Iteration  10: residual = 2.044011e-01
+  ✓ Converged at iteration 19 (residual = 8.296021e-03)
+  ✓ I = 92238.601 pA (iterations: 20)
+
+  --- Bias 29/31: V = 0.280 V ---
+  Iteration   0: residual = 7.180311e+00
+  Iteration   1: residual = 5.029800e+00
+  Iteration   2: residual = 3.523690e+00
+  Iteration   3: residual = 2.468608e+00
+  Iteration   4: residual = 1.729427e+00
+  Iteration  10: residual = 2.044192e-01
+  ✓ Converged at iteration 19 (residual = 8.292168e-03)
+  ✓ I = 102564.537 pA (iterations: 20)
+
+  --- Bias 30/31: V = 0.290 V ---
+  Iteration   0: residual = 7.180943e+00
+  Iteration   1: residual = 5.030271e+00
+  Iteration   2: residual = 3.524099e+00
+  Iteration   3: residual = 2.468957e+00
+  Iteration   4: residual = 1.729694e+00
+  Iteration  10: residual = 2.044376e-01
+  ✓ Converged at iteration 19 (residual = 8.287920e-03)
+  ✓ I = 114778.238 pA (iterations: 20)
+
+  --- Bias 31/31: V = 0.300 V ---
+  Iteration   0: residual = 7.181692e+00
+  Iteration   1: residual = 5.030855e+00
+  Iteration   2: residual = 3.524641e+00
+  Iteration   3: residual = 2.469388e+00
+  Iteration   4: residual = 1.730016e+00
+  Iteration  10: residual = 2.044558e-01
+  ✓ Converged at iteration 19 (residual = 8.283198e-03)
+  ✓ I = 129242.824 pA (iterations: 20)
+
+[5/5] Computing IETS spectrum...
+  dI/dV range: 1.525e-07 to 1.446e-06 S
+  d²I/dV² range: 1.581e-07 to 1.899e-05 S/V
+  Positive features: 31/31
+
+======================================================================
+SIMULATION COMPLETE in 367.4 seconds
+======================================================================
+
+
+======================================================================
+SIMULATION COMPLETE!
+======================================================================
+
+Total time: 367.4 seconds (6.12 minutes)
+Time per bias point: 11.9 seconds
+
+======================================================================
+✗ SIMULATION FAILED
+======================================================================
+
+Error after 367.4 seconds:
+  KeyError: 'Gamma1_array'
+
+Full traceback:
+
+======================================================================
