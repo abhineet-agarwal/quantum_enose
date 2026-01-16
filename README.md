@@ -6,15 +6,6 @@
 
 ---
 
-## 🌟 **PROJECT STATUS: COMPLETE & PRODUCTION-READY**
-
-✅ All 4 development batches complete  
-✅ Full pipeline tested and validated  
-✅ Ready for research simulations  
-✅ SISPAD 2025 target on track  
-
----
-
 ## Overview
 
 This is a **complete quantum transport simulation framework** for designing and analyzing oxide-based RTD sensors that detect molecules through vibrational fingerprinting at room temperature.
@@ -368,14 +359,6 @@ python quick_test.py
 
 ## Citation
 
-```bibtex
-@software{quantum_enose_2025,
-  title = {Quantum E-Nose: NEGF-SCBA Simulator for RTD-IETS},
-  author = {[Your Name]},
-  year = {2025},
-  note = {Oxide semiconductor RTDs for room-temperature molecular detection}
-}
-```
 
 **References**:
 - Patil et al., Sci. Rep. 8:128 (2018) - RTD-IETS concept
@@ -386,7 +369,6 @@ python quick_test.py
 
 ## License
 
-Research code - Please cite if used in publications
 
 ---
 
@@ -394,26 +376,5 @@ Research code - Please cite if used in publications
 
 **Project**: Quantum biomimetic electronic nose  
 **Institution**: IIT Bombay, Dept. of Electrical Engineering  
-**Advisor**: Prof. Swaroop Ganguly  
-**Target**: SISPAD 2025 conference submission  
 
----
-
-## 🎊 **CONGRATULATIONS!**
-
-You have a **complete, validated, production-ready** quantum transport simulator!
-
-**Achievement unlocked**:
-- ✅ 2600+ lines of code
-- ✅ 12 devices × 21 molecules = 252 simulations ready
-- ✅ Room-temperature IETS detection
-- ✅ Publication-quality framework
-- ✅ Modular, extensible architecture
-
-**Ready to revolutionize molecular sensing!** 🚀
-
----
-
-**Last Updated**: January 2026  
-**Version**: 1.0.0 (Batch 4 Complete)  
-**Status**: 🟢 Production Ready
+--
