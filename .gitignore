@@ -4,3 +4,19 @@ __pycache__/
 .DS_Store
 .env
 
+# Output directories
+results/
+batch_results/
+figures_publication/
+logs/
+data/
+
+# Archived redundant scripts
+archive/
+
+# Debug scripts
+debug/
+
+# Reference papers (large PDFs)
+papers/
+

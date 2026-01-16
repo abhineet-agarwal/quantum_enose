@@ -307,37 +307,103 @@ def save_batch_summary(batch_results, output_dir):
     return filepath
 
 # ============================================================================
+# CLI ARGUMENT PARSING
+# ============================================================================
+
+def parse_args():
+    """Parse command-line arguments for batch screening"""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Batch screening of molecules on RTD devices',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    # Selection
+    parser.add_argument('--molecules', '-m', type=str, default='all',
+                       help='Molecule selection: "all", class name (e.g., "Aromatic"), or comma-separated list')
+    parser.add_argument('--devices', '-d', type=str, default='GaAs_AlAs_symmetric',
+                       help='Device(s): comma-separated list of device names')
+
+    # Resolution (batch uses lower resolution for speed)
+    parser.add_argument('--e-points', type=int, default=150,
+                       help='Number of energy points')
+    parser.add_argument('--v-points', type=int, default=21,
+                       help='Number of bias points')
+
+    # Output
+    parser.add_argument('--output-dir', '-o', type=str, default='batch_results',
+                       help='Output directory')
+    parser.add_argument('--no-individual', action='store_true',
+                       help='Skip saving individual result files')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                       help='Verbose output for each simulation')
+
+    # Utility
+    parser.add_argument('--list-classes', action='store_true',
+                       help='List available perceptual classes and exit')
+    parser.add_argument('--test', action='store_true',
+                       help='Quick test mode (3 molecules, low resolution)')
+
+    return parser.parse_args()
+
+
+# ============================================================================
 # MAIN EXECUTION
 # ============================================================================
 
 if __name__ == "__main__":
+    args = parse_args()
+
+    # Handle utility options
+    if args.list_classes:
+        print("\nAvailable perceptual classes:")
+        for cls, mols in PERCEPTUAL_CLASSES.items():
+            print(f"\n  {cls} ({len(mols)} molecules):")
+            for mol in mols:
+                print(f"    - {mol}")
+        sys.exit(0)
+
     # Create configuration
     config = BatchConfig()
-    
-    # Command-line options
-    if len(sys.argv) > 1:
-        selection = sys.argv[1]
-        if selection in PERCEPTUAL_CLASSES:
-            config.molecule_selection = selection
-            print(f"Running class: {selection}")
-        elif selection == "test":
-            # Quick test with 3 molecules
-            config.molecule_selection = ["Benzene", "Toluene", "Naphthalene"]
-            config.V_points = 11
-            print("Running TEST mode (3 molecules)")
+
+    # Test mode
+    if args.test:
+        config.molecule_selection = ["Benzene", "Naphthalene", "Furan"]
+        config.V_points = 11
+        config.E_points = 100
+        print("Running TEST mode (3 molecules, low resolution)")
+    else:
+        # Parse molecule selection
+        if args.molecules in PERCEPTUAL_CLASSES:
+            config.molecule_selection = args.molecules
+        elif args.molecules == 'all':
+            config.molecule_selection = 'all'
+        elif ',' in args.molecules:
+            config.molecule_selection = [m.strip() for m in args.molecules.split(',')]
         else:
-            config.molecule_selection = selection
-    
+            config.molecule_selection = args.molecules
+
+        # Parse device selection
+        config.device_names = [d.strip() for d in args.devices.split(',')]
+
+    # Other options
+    config.E_points = args.e_points
+    config.V_points = args.v_points
+    config.output_dir = args.output_dir
+    config.save_individual = not args.no_individual
+    config.verbose = args.verbose
+
     # Run batch
     batch_results = run_batch_screening(config)
-    
+
     # Print final summary
     print("\nFINAL SUMMARY:")
     successful = [s for s in batch_results['simulations'] if 'error' not in s]
     print(f"  Total simulations: {len(batch_results['simulations'])}")
     print(f"  Successful: {len(successful)}")
     print(f"  Failed: {len(batch_results['simulations']) - len(successful)}")
-    
+
     if successful:
         I_peaks = [s['summary']['I_peak'] for s in successful]
         print(f"  Current range: {min(I_peaks)*1e12:.2f} to {max(I_peaks)*1e12:.2f} pA")

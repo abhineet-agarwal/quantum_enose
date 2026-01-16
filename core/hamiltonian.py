@@ -15,12 +15,12 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
 try:
-    from config.device_library import get_device, get_material, MATERIALS
+    from config.device_library import get_device, get_material, MATERIALS, get_band_offset, BAND_OFFSETS
 except ImportError:
     # Try alternative import for standalone testing
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "device_library", 
+        "device_library",
         os.path.join(parent_dir, "config", "device_library.py")
     )
     device_lib = importlib.util.module_from_spec(spec)
@@ -28,6 +28,8 @@ except ImportError:
     get_device = device_lib.get_device
     get_material = device_lib.get_material
     MATERIALS = device_lib.MATERIALS
+    get_band_offset = device_lib.get_band_offset
+    BAND_OFFSETS = device_lib.BAND_OFFSETS
 
 # Physical constants
 m0 = 9.10938356e-31  # kg (electron mass)
@@ -51,14 +53,17 @@ def J_to_eV(J):
 def discretize_device(device_config, grid_spacing=0.1e-9):
     """
     Discretize device structure onto 1D grid
-    
+
+    Uses BAND_OFFSETS lookup table for accurate well/barrier-specific
+    conduction band offsets from literature.
+
     Parameters:
     -----------
     device_config : dict
         Device configuration from device_library
     grid_spacing : float
         Lattice spacing in meters (default 0.1 nm)
-        
+
     Returns:
     --------
     dict with keys:
@@ -71,11 +76,26 @@ def discretize_device(device_config, grid_spacing=0.1e-9):
         'Np' : int - number of grid points
         'a' : float - grid spacing (m)
         'layer_boundaries' : list - (start_idx, end_idx) for each layer
+        'well_material' : str - identified well material
+        'barrier_material' : str - identified barrier material (if any)
     """
-    
+
     layers = device_config['layers']
     a = grid_spacing
-    
+
+    # Identify well and barrier materials from layer structure
+    # Convention: first layer is emitter (well), barriers have higher Ec
+    well_material = layers[0]['material']
+    barrier_material = None
+
+    # Find the barrier material (layer with highest base Ec)
+    for layer in layers:
+        mat_name = layer['material']
+        mat = get_material(mat_name)
+        if mat['Ec'] > 0.1:  # Significant band offset indicates barrier
+            barrier_material = mat_name
+            break
+
     # Arrays to build
     x_coords = []
     material_list = []
@@ -84,38 +104,53 @@ def discretize_device(device_config, grid_spacing=0.1e-9):
     epsilon_r_list = []
     doping_list = []
     layer_boundaries = []
-    
+
     x_current = 0.0
     global_idx = 0
-    
+
     for layer in layers:
         mat_name = layer['material']
         thickness = layer['thickness']
         doping = layer['doping']
-        
+
         # Get material properties
         mat = get_material(mat_name)
-        
+
+        # Determine band edge using proper offset lookup
+        if mat_name == well_material:
+            # Well material: Ec = 0 (reference)
+            Ec_value = 0.0
+        elif barrier_material and mat_name == barrier_material:
+            # Barrier material: use literature band offset
+            try:
+                Ec_value = get_band_offset(well_material, barrier_material)
+            except (ValueError, KeyError):
+                # Fallback to MATERIALS Ec value
+                Ec_value = mat['Ec']
+        else:
+            # Other materials (e.g., different well in heterostructure)
+            Ec_value = mat['Ec']
+
         # Number of points in this layer
         N_layer = max(1, int(round(thickness / a)))
-        
+
         # Record layer boundaries
         start_idx = global_idx
         end_idx = global_idx + N_layer - 1
         layer_boundaries.append((start_idx, end_idx))
-        
+
         # Generate points for this layer
         for i in range(N_layer):
             x_coords.append(x_current + i * a)
             material_list.append(mat_name)
             m_eff_list.append(mat['m_eff'] * m0)  # Convert to kg
-            Ec_list.append(mat['Ec'])  # eV
+            Ec_list.append(Ec_value)  # eV
             epsilon_r_list.append(mat['epsilon_r'])
             doping_list.append(doping)
-            
+
         x_current += N_layer * a
         global_idx += N_layer
-    
+
     return {
         'x': np.array(x_coords),
         'material': material_list,
@@ -125,7 +160,9 @@ def discretize_device(device_config, grid_spacing=0.1e-9):
         'doping': np.array(doping_list),
         'Np': len(x_coords),
         'a': a,
-        'layer_boundaries': layer_boundaries
+        'layer_boundaries': layer_boundaries,
+        'well_material': well_material,
+        'barrier_material': barrier_material
     }
 
 # ============================================================================

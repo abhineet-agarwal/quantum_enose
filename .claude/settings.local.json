@@ -9,7 +9,10 @@
       "Bash(open:*)",
       "Bash(python debug_igzo.py:*)",
       "Bash(python test_hybrid_comparison.py:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(./venv/bin/python:*)",
+      "WebSearch",
+      "Bash(pdflatex:*)"
     ]
   }
 }

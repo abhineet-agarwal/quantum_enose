@@ -540,29 +540,198 @@ def save_results(results, filename=None):
     return filepath
 
 # ============================================================================
+# CLI ARGUMENT PARSING
+# ============================================================================
+
+def parse_args():
+    """Parse command-line arguments"""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Run IETS simulation for a single molecule on an RTD device',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    # Required arguments
+    parser.add_argument('--device', '-d', type=str, default='GaAs_AlAs_symmetric',
+                       help='Device name from device_library')
+    parser.add_argument('--molecule', '-m', type=str, default='Benzene',
+                       help='Molecule name from molecular_database')
+
+    # Bias sweep
+    parser.add_argument('--v-min', type=float, default=0.0,
+                       help='Minimum bias voltage (V)')
+    parser.add_argument('--v-max', type=float, default=0.5,
+                       help='Maximum bias voltage (V)')
+    parser.add_argument('--v-points', type=int, default=26,
+                       help='Number of bias points')
+
+    # Energy grid
+    parser.add_argument('--e-min', type=float, default=-0.3,
+                       help='Minimum energy (eV)')
+    parser.add_argument('--e-max', type=float, default=1.5,
+                       help='Maximum energy (eV)')
+    parser.add_argument('--e-points', type=int, default=200,
+                       help='Number of energy points')
+
+    # Physics parameters
+    parser.add_argument('--temperature', '-T', type=float, default=300,
+                       help='Temperature (K)')
+    parser.add_argument('--bulk-phonon', type=float, default=0.036,
+                       help='Bulk phonon energy (eV)')
+    parser.add_argument('--bulk-coupling', type=float, default=0.010,
+                       help='Bulk phonon coupling (eV)')
+    parser.add_argument('--mol-coupling-scale', type=float, default=1.0,
+                       help='Molecular coupling scale factor')
+
+    # SCBA parameters
+    parser.add_argument('--scba-max-iter', type=int, default=50,
+                       help='Maximum SCBA iterations')
+    parser.add_argument('--scba-tol', type=float, default=1e-4,
+                       help='SCBA convergence tolerance')
+    parser.add_argument('--scba-mix', type=float, default=0.3,
+                       help='SCBA mixing parameter')
+
+    # Quasi-3D options
+    parser.add_argument('--multimode', action='store_true',
+                       help='Enable quasi-3D multimode transport')
+    parser.add_argument('--Ly', type=float, default=1.0,
+                       help='Transverse width y (um)')
+    parser.add_argument('--Lz', type=float, default=1.0,
+                       help='Transverse width z (um)')
+    parser.add_argument('--n-max', type=int, default=3,
+                       help='Max mode index in y')
+    parser.add_argument('--m-max', type=int, default=3,
+                       help='Max mode index in z')
+
+    # Hybrid mode selection
+    parser.add_argument('--hybrid', action='store_true',
+                       help='Enable hybrid mode selection (requires --multimode)')
+    parser.add_argument('--n-inelastic', type=int, default=4,
+                       help='Number of inelastic modes for hybrid')
+
+    # Output options
+    parser.add_argument('--output-dir', '-o', type=str, default='results',
+                       help='Output directory')
+    parser.add_argument('--output-file', type=str, default=None,
+                       help='Output filename (auto-generated if not specified)')
+    parser.add_argument('--save-npz', action='store_true',
+                       help='Save full results as .npz file')
+    parser.add_argument('--quiet', '-q', action='store_true',
+                       help='Quiet mode (minimal output)')
+
+    # Utility
+    parser.add_argument('--list-devices', action='store_true',
+                       help='List available devices and exit')
+    parser.add_argument('--list-molecules', action='store_true',
+                       help='List available molecules and exit')
+
+    return parser.parse_args()
+
+
+def config_from_args(args):
+    """Create SimulationConfig from parsed arguments"""
+    config = SimulationConfig()
+
+    # Device and molecule
+    config.device_name = args.device
+    config.molecule_name = args.molecule
+
+    # Bias sweep
+    config.V_min = args.v_min
+    config.V_max = args.v_max
+    config.V_points = args.v_points
+
+    # Energy grid
+    config.E_min = args.e_min
+    config.E_max = args.e_max
+    config.E_points = args.e_points
+
+    # Physics
+    config.temperature = args.temperature
+    config.bulk_phonon_energy = args.bulk_phonon
+    config.bulk_phonon_coupling = args.bulk_coupling
+    config.molecular_coupling_scale = args.mol_coupling_scale
+
+    # SCBA
+    config.scba_max_iter = args.scba_max_iter
+    config.scba_tolerance = args.scba_tol
+    config.scba_mixing = args.scba_mix
+
+    # Quasi-3D
+    config.use_multimode = args.multimode
+    config.Ly = args.Ly * 1e-6  # um to m
+    config.Lz = args.Lz * 1e-6
+    config.n_max = args.n_max
+    config.m_max = args.m_max
+
+    # Hybrid
+    config.use_hybrid = args.hybrid
+    config.n_inelastic = args.n_inelastic
+
+    # Output
+    config.output_dir = args.output_dir
+    config.verbose = not args.quiet
+
+    return config
+
+
+# ============================================================================
 # MAIN EXECUTION
 # ============================================================================
 
 if __name__ == "__main__":
-    # Create configuration
-    config = SimulationConfig()
-    
-    # Allow command-line overrides
-    if len(sys.argv) > 1:
-        config.device_name = sys.argv[1]
-    if len(sys.argv) > 2:
-        config.molecule_name = sys.argv[2]
-    
+    args = parse_args()
+
+    # Handle utility options
+    if args.list_devices:
+        from config.device_library import DEVICES
+        print("\nAvailable devices:")
+        for name in DEVICES.keys():
+            print(f"  - {name}")
+        sys.exit(0)
+
+    if args.list_molecules:
+        from config.molecular_database import MOLECULES, PERCEPTUAL_CLASSES
+        print("\nAvailable molecules by class:")
+        for cls, mols in PERCEPTUAL_CLASSES.items():
+            print(f"\n  {cls}:")
+            for mol in mols:
+                print(f"    - {mol}")
+        sys.exit(0)
+
+    # Create configuration from args
+    config = config_from_args(args)
+
+    # Validate hybrid requires multimode
+    if config.use_hybrid and not config.use_multimode:
+        print("Warning: --hybrid requires --multimode, enabling multimode")
+        config.use_multimode = True
+
     # Run simulation
     results = run_iets_simulation(config)
-    
+
     # Save results
-    save_results(results)
-    
+    save_results(results, filename=args.output_file)
+
+    # Save .npz if requested
+    if args.save_npz:
+        npz_file = os.path.join(config.output_dir,
+                                f"{config.device_name}_{config.molecule_name}_data.npz")
+        np.savez(npz_file,
+                 V_array=results['V_array'],
+                 I_array=results['I_array'],
+                 dIdV=results['dIdV'],
+                 d2IdV2=results['d2IdV2'],
+                 E_array=results['E_array'])
+        print(f"Data saved to: {npz_file}")
+
     # Print summary
     print("\nSUMMARY:")
     print(f"  Device: {config.device_name}")
     print(f"  Molecule: {config.molecule_name}")
+    print(f"  Mode: {'Quasi-3D' if config.use_multimode else '1D'}" +
+          (f" (hybrid, {config.n_inelastic} inelastic)" if config.use_hybrid else ""))
     print(f"  Peak current: {results['I_array'].max()*1e12:.3f} pA")
     print(f"  Max conductance: {results['dIdV'].max():.3e} S")
     print(f"  IETS features: {np.sum(results['d2IdV2'] > 0)}")
