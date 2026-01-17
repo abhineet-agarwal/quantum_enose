@@ -286,9 +286,6 @@ save_results(results, "my_simulation.csv")
 3. **Molecular discrimination**: Perceptual class accuracy
 4. **Sensitivity analysis**: Coupling strength effects
 
-### SISPAD 2025 Preparation
-
-**Target submission**: Demonstrate room-temperature detection
 
 **Key figures**:
 1. IETS spectra for representative molecules
