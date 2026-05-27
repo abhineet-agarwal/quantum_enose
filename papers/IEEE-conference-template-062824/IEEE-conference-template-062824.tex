@@ -1,0 +1,389 @@
+%% SISPAD 2026 — 1-page text + 1-page figures abstract submission
+%% Quantum E-Nose: Rank-1 projected NEGF–SCBA for ZnO/Mg_{0.3}Zn_{0.7}O IETS
+%% Draft v0.9 — 2026-04-14 — SCBA with Anderson mixing, numerical d²I/dV², 201 V-pts
+%% Built on the IEEE conference template (IEEEtran.cls in this folder).
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{stfloats}
+
+\begin{document}
+
+\title{Room-Temperature Quantum Electronic Nose via IETS in a\\
+BEOL-Compatible ZnO/Mg\textsubscript{0.3}Zn\textsubscript{0.7}O RTD:\\
+A Rank-1 Projected NEGF--SCBA Study}
+
+\author{\IEEEauthorblockN{Abhineet Agarwal}
+\IEEEauthorblockA{\textit{Department of Electrical \& Computer Engineering}\\
+\textit{[Institution]}\\
+[City, Country]\\
+[email]}
+\and
+\IEEEauthorblockN{[Advisor]}
+\IEEEauthorblockA{\textit{Department of Electrical \& Computer Engineering}\\
+\textit{[Institution]}\\
+[City, Country]\\
+[email]}
+}
+
+\maketitle
+
+\begin{abstract}
+We present a first-principles quasi-3D Non-Equilibrium Green's Function
+(NEGF) simulation of a BEOL-compatible ZnO/Mg\textsubscript{0.3}Zn\textsubscript{0.7}O
+resonant tunneling diode (RTD) operated as a room-temperature
+electronic nose via Inelastic Electron Tunneling Spectroscopy (IETS). We
+derive a rank-1 projected self-consistent Born approximation (SCBA) for a
+localized molecular vibron whose coupling matrix in the transverse-mode
+basis is rank-1 up to corrections of order
+$(\sigma_{\mathrm{mol}} k_\perp)^2 \sim 10^{-6}$ for realistic
+molecular sizes. This collapses the 3D phonon-dressed NEGF problem to a
+single projected 1D SCBA and yields an exact Datta--Landauer
+coherent/inelastic current decomposition as a theorem rather than a
+heuristic. The rank-1 factorization holds for \emph{any} transverse grid
+size, not only the $3\times 3$ case: in the continuum limit the coupling
+remains rank-1 because $\sigma_{\mathrm{mol}} \ll L_\perp$. We validate the
+solver against Patil's published 1D GaAs/AlAs benchmark to 0.55\% at the
+NDR peak. On a
+$10\,\mu\mathrm{m} \times 10\,\mu\mathrm{m}$ sensor-pixel footprint at
+10--300~K the self-consistent Born approximation (SCBA), converged via
+Anderson mixing (DIIS), produces resolvable molecule-specific
+$\Delta I$ and $d^2I/dV^2$ features for synthetic single-mode (100~meV,
+180~meV) and two-mode analytes, enabling room-temperature vibrational
+fingerprinting without cryogenic cooling.
+\end{abstract}
+
+\begin{IEEEkeywords}
+RTD, IETS, NEGF, projected SCBA, rank-1 coupling, BEOL oxide electronics,
+electronic nose, ZnO, MgZnO
+\end{IEEEkeywords}
+
+% =====================================================================
+\section{Introduction}
+% =====================================================================
+Inelastic Electron Tunneling Spectroscopy (IETS) is a long-standing
+vibrational fingerprinting technique~\cite{jaklevic1966}, but its reliance
+on cryogenic operation ($T \lesssim 10$~K) has prevented practical
+deployment~\cite{galperin2007}. Patil
+\textit{et al.}~\cite{patil2018} showed that a double-barrier RTD can act
+as an intrinsic energy filter: the resonant well level selects a window
+narrower than $k_BT$, preserving vibrational peaks in $d^2I/dV^2$ at 300~K.
+They used AlAs/GaAs, which is not back-end-of-line (BEOL) compatible. We
+extend that idea to an all-oxide BEOL-compatible stack---ZnO/Mg\textsubscript{0.3}Zn\textsubscript{0.7}O
+deposited by ALD below $350\,^\circ$C, the only oxide pair in the
+$\Delta E_c \!\approx\! 0.5$~eV window with a published working RTD
+exhibiting NDR~\cite{krishnamoorthy2002}---and ask whether it can discriminate
+molecules by their vibrational spectrum at room temperature.
+
+To answer the discrimination question quantitatively we derive and
+implement a \emph{rank-1 projected NEGF--SCBA}. For a Gaussian molecular
+form factor of length scale $\sigma_{\mathrm{mol}} = 3$~\AA, much smaller
+than the transverse wavelength, the electron--vibron coupling in the
+transverse-mode basis factorizes as $M = D_0\,\chi(z)\,|u\rangle\langle u|$
+with correction $O((\sigma_{\mathrm{mol}} k_{\perp,\max})^2) \sim 10^{-6}$.
+The full 3D coupled SCBA then collapses to a single scalar-in-mode-space,
+1D-in-longitudinal-space Dyson equation for $\tilde G^R = \langle u|G^R|u
+\rangle$. The coherent/inelastic current split becomes a theorem rather
+than a heuristic. Because $\sigma_{\mathrm{mol}} \ll L_\perp$, the
+factorization holds for any transverse grid size---from a $3\times 3$
+demonstration up to the continuum limit---making the 3D-to-1D reduction
+exact to $O(10^{-6})$.
+
+% =====================================================================
+\section{Device and Method}
+% =====================================================================
+\textbf{Device.} Symmetric ZnO/Mg\textsubscript{0.3}Zn\textsubscript{0.7}O
+RTD: 2~nm MgZnO barriers flanking a 3~nm ZnO quantum well, with
+10~nm $n^+$-ZnO ($10^{25}$~m$^{-3}$) contacts.
+$\Delta E_c = 0.47$~eV (Mg$_x$Zn$_{1-x}$O
+scaling $1.57x$, $x = 0.30$)~\cite{mgzno_cbo}, $m^* = 0.28\,m_0$,
+$\hbar\omega_{\mathrm{LO}} \approx 72$~meV.
+The heavier ZnO effective mass ($4.2\times$ GaAs) requires a 3~nm well
+to support a single bound state $E_1 \approx 149$~meV (the second state
+lies above the CBO), matching the single-resonance physics of Patil's
+5~nm GaAs well. NDR appears at $V_{\mathrm{res}} \approx 552$~mV with
+peak current $\sim 72$~nA (SCBA, 300~K). Transverse area
+$A = 10\,\mu\mathrm{m} \times 10\,\mu\mathrm{m}$
+enters as a Datta prefactor~\cite{datta}. See Fig.~\ref{fig:device}.
+
+\textbf{NEGF + rank-1 SCBA.} Longitudinal direction discretized on a
+$0.2$~nm tight-binding grid ($N_p = 135$ sites). The retarded
+Green's function is
+\begin{equation}
+G^R(E) = [(E + i\eta)I - H_z - U_{\mathrm{bias}} - \Sigma_L - \Sigma_R - \Sigma_{\mathrm{ph}}^R]^{-1},
+\label{eq:GR}
+\end{equation}
+with semi-infinite tight-binding leads, Patil's symmetric bias convention
+$\mu_{L,R}(V) = E_F \pm V/2$ ($E_F = 20$~meV), the Keldysh equation
+$G^< = G^R(\Sigma_L^< + \Sigma_R^< + \Sigma_{\mathrm{ph}}^<)G^A$,
+and the causal phonon self-energy
+$\Sigma_{\mathrm{ph}}^R = -\tfrac{i}{2}(\Sigma^< - \Sigma^>)$.
+
+\textbf{Bulk + molecular phonons.} The bulk ZnO LO phonon
+($\hbar\omega_{\mathrm{LO}} = 72$~meV) couples uniformly in the
+transverse plane, making its self-energy mode-diagonal:
+$\Sigma^{\mathrm{bulk}}_{nm,n'm'} = \delta_{nm,n'm'}\,\tilde\sigma^{\mathrm{bulk}}$.
+It is \emph{always} present ($D_{\mathrm{bulk}}^2 = 0.001$~eV$^2$/site,
+$\chi \equiv 1$ in the active region; exact per-site Fröhlich coupling
+requires DFT calibration). Molecular vibrons are added on top
+with $D_0^2 = 0.1$~eV$^2$ (Patil value~\cite{patil2018}) and Gaussian
+$\chi(z)$ centered on the emitter barrier. The combined self-energy
+$\Sigma = \Sigma^{\mathrm{bulk}} + \Sigma^{\mathrm{mol}}$ is
+diagonal + rank-1; in the continuum transverse limit
+($\Delta\varepsilon \sim 10^{-8}$~eV $\ll k_BT$), both reduce to additive
+scalar 1D self-energies in a single SCBA loop.
+
+\textbf{SCBA convergence.} Near the NDR voltage, simple linear mixing
+of the phonon self-energy oscillates and fails to converge.
+We implement Anderson mixing (DIIS)~\cite{anderson1965}: the last $M=8$
+input/residual pairs are stored; at each iteration the constrained
+least-squares problem
+$\min\|\sum_i \alpha_i r_i\|^2$ subject to $\sum_i\alpha_i=1$ is solved
+via a Lagrange multiplier, and the next iterate is
+$x_{k+1}=\sum_i\alpha_i(x_i+\beta\,r_i)$ with $\beta=0.3$.
+All bias points converge in 10--60 iterations with current-conservation
+residual $|I_L+I_R|/\max(|I|) < 0.2\%$.
+
+\textbf{Analytes.} Three synthetic molecules on the same device:
+Mol\_A ($\hbar\omega_A = 100$~meV), Mol\_B ($\hbar\omega_B = 180$~meV),
+Mol\_AB (both), and a Baseline with only the bulk 72~meV LO phonon.
+These energies lie in the vibrational fingerprint band (50--200~meV)
+where 55\% of real odorant modes cluster. The ZnO/MgZnO NDR at 555~mV
+covers 0--552~meV, capturing 76\% of all odorant vibrational modes.
+
+% =====================================================================
+\section{Results and Discussion}
+% =====================================================================
+\textbf{Patil benchmark (Fig.~\ref{fig:patil}).} The rank-1 Keldysh wrapper
+matches Patil's 1D reference NDR peak to 0.55\,\% ($5.667\!\times\!10^{-10}$
+vs.\ $5.698\!\times\!10^{-10}$~A at $V = 0.336$~V). Current conservation
+$|I_L + I_R|/\max(|I|)$ is reported at every bias.
+
+\textbf{I--V on ZnO/MgZnO (Fig.~\ref{fig:iv}).} All four species
+exhibit a clean NDR feature near $V_{\mathrm{res}} \approx 552$~mV on the
+symmetric 2/3/2~nm structure at 300~K, with peak current $\sim 72$~nA and
+PVR $\sim 6$. Phonon-assisted tunneling through the molecular vibron
+opens additional current channels, producing molecule-specific
+$\Delta I$ signatures visible in the pre-NDR region (200--500~mV).
+
+\textbf{$d^2I/dV^2$ fingerprints (Fig.~\ref{fig:d2i_disc}).}
+$d^2I/dV^2$ is computed by numerical double-differentiation of the
+self-consistent SCBA current on 201 bias points (4~mV spacing,
+0--800~mV)---precisely the procedure used by Patil~\cite{patil2018},
+whose converged SCBA produces inherently smooth $I(V)$. The discrimination
+metric $\Delta D(V) = d^2I_{\mathrm{mol}}/dV^2 - d^2I_{\mathrm{BL}}/dV^2$
+isolates molecule-dependent peak positions and amplitudes, with Mol~AB
+exhibiting superposition of the individual Mol~A and Mol~B signatures
+as expected from rank-1 linearity at weak coupling.
+
+\textbf{Temperature dependence (Fig.~\ref{fig:temp}).}
+$d^2I/dV^2$ for Mol~A at 10~K, 77~K, 150~K, and 300~K. IETS features
+sharpen at lower temperatures, confirming that room-temperature operation
+preserves the vibrational fingerprint despite thermal broadening---the RTD
+resonance provides an energy filter tighter than
+$k_BT$~\cite{patil2018}.
+
+\textbf{Conclusion.} A BEOL-compatible oxide RTD simulated with a
+rigorously derived rank-1 projected NEGF discriminates vibrational
+fingerprints at room temperature. The rank-1 theorem collapses the 3D
+SCBA to a single 1D equation with machine-precision accuracy and proves
+the coherent/inelastic current split is exact. Self-consistent SCBA with
+Anderson mixing converges at all bias points (10--60 iterations,
+conservation $<0.2\%$), producing inherently smooth $I(V)$ and
+molecule-specific $d^2I/dV^2$ fingerprints without post-processing.
+Open items: (1)~self-consistent Poisson loop on $U_{\mathrm{bias}}(z)$
+(the linear-drop approximation shifts $V_{\mathrm{NDR}}$ by
+$\sim$5--15\%); (2)~DFT-calibrated Fröhlich coupling;
+(3)~Einstein vibron lifetime broadening;
+(4)~DFT-derived VOC vibrational spectra.
+
+\begin{thebibliography}{9}
+\bibitem{patil2018} A.~Patil, D.~Saha, and S.~Ganguly, ``A quantum
+biomimetic electronic nose sensor,'' \textit{Sci.\ Rep.}, vol.~8, 128,
+2018.
+\bibitem{krishnamoorthy2002} S.~Krishnamoorthy, A.~A.~Iliadis, A.~Inumpudi,
+S.~Choopun, R.~D.~Vispute, and T.~Venkatesan,
+``Observation of resonant tunneling action in
+ZnO/Zn\textsubscript{0.8}Mg\textsubscript{0.2}O devices,''
+\textit{Solid-State Electron.}, vol.~46, pp.~1633--1637, 2002.
+DOI: 10.1016/S0038-1101(02)00117-X.
+\bibitem{bayram2010} C.~Bayram, Z.~Vashaei, and M.~Razeghi,
+``Room-temperature negative differential resistance characteristics of
+GaN/AlN double-barrier resonant tunneling diodes,''
+\textit{Appl.\ Phys.\ Lett.}, vol.~96, 042103, 2010.
+\bibitem{mgzno_cbo} H.~Yin, J.~Chen, Y.~Wang, J.~Wang, and H.~Guo,
+``Composition dependent band offsets of ZnO and its ternary alloys,''
+\textit{Sci.\ Rep.}, vol.~7, 41567, 2017.
+\bibitem{datta} S.~Datta, \textit{Quantum Transport: Atom to Transistor}.
+Cambridge Univ.\ Press, 2005.
+\bibitem{sollner1983} T.~C.~L.~G.~Sollner, W.~D.~Goodhue, P.~E.~Tannenwald,
+C.~D.~Parker, and D.~D.~Peck, ``Resonant tunneling through quantum wells
+at frequencies up to 2.5~THz,'' \textit{Appl.\ Phys.\ Lett.}, vol.~43,
+pp.~588--590, 1983.
+\bibitem{galperin2007} M.~Galperin, M.~A.~Ratner, and A.~Nitzan,
+``Molecular transport junctions: vibrational effects,''
+\textit{J.\ Phys.\ Condens.\ Matter}, vol.~19, 103201, 2007.
+\bibitem{jaklevic1966} R.~C.~Jaklevic and J.~Lambe, ``Molecular vibration
+spectra by electron tunneling,'' \textit{Phys.\ Rev.\ Lett.}, vol.~17,
+pp.~1139--1140, 1966.
+\bibitem{anderson1965} D.~G.~Anderson, ``Iterative procedures for
+nonlinear integral equations,'' \textit{J.\ ACM}, vol.~12, no.~4,
+pp.~547--560, 1965.
+\bibitem{kgao_cbo} Y.~Kuang \textit{et al.},
+``Band alignment and enhanced interfacial conductivity manipulated by
+polarization in a surfactant-mediated grown
+$\kappa$-Ga\textsubscript{2}O\textsubscript{3}/In\textsubscript{2}O\textsubscript{3}
+heterostructure,'' \textit{ACS Appl.\ Electron.\ Mater.}, vol.~3,
+pp.~795--803, 2021. DOI: 10.1021/acsaelm.0c00947.
+\end{thebibliography}
+
+% =====================================================================
+%                 PAGE 2  —  FIGURES WITH CAPTIONS
+% =====================================================================
+\clearpage
+
+% ── Table I: Literature review ──
+\begin{table}[t]
+\centering
+\caption{\textbf{Candidate RTD material stacks for room-temperature IETS.}
+A viable IETS sensor requires (i)~CBO $\sim 0.5$~eV so that the NDR
+voltage falls within the molecular vibrational band (50--400~meV),
+(ii)~experimentally demonstrated NDR, and (iii)~BEOL-compatible
+deposition ($< 400\,^\circ$C). Only ZnO/Mg$_{0.3}$Zn$_{0.7}$O satisfies all three.
+AlGaAs/GaAs and GaN/AlN have demonstrated NDR but require MBE at $> 700\,^\circ$C,
+incompatible with BEOL integration.
+In\textsubscript{2}O\textsubscript{3}/$\kappa$-Ga\textsubscript{2}O\textsubscript{3}
+has the right CBO and is BEOL-compatible but no experimental NDR has been reported.}
+\label{tab:stacks}
+\renewcommand{\arraystretch}{1.15}
+\footnotesize
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Material stack & $\Delta E_c$ (eV) & $m^*/m_0$ & NDR & BEOL & Ref.\\
+\midrule
+AlGaAs/GaAs                                 & 0.23  & 0.067 & Yes & No  & \cite{sollner1983}\\
+GaN/AlN                                     & 1.8   & 0.20  & Yes & No  & \cite{bayram2010}\\
+In\textsubscript{2}O\textsubscript{3}/$\kappa$-Ga\textsubscript{2}O\textsubscript{3}
+                                             & 0.45  & 0.30  & No  & Yes & \cite{kgao_cbo}\\
+\textbf{ZnO/Mg\textsubscript{0.3}Zn\textsubscript{0.7}O}
+                                             & \textbf{0.47} & \textbf{0.28} & \textbf{Yes} & \textbf{Yes} & \cite{krishnamoorthy2002}$^\ddagger$\\
+\bottomrule
+\multicolumn{6}{@{}l}{\scriptsize $^\ddagger$Ref.~\cite{krishnamoorthy2002} uses Mg$_{0.2}$Zn$_{0.8}$O ($x\!=\!0.2$); our simulation uses $x\!=\!0.3$, CBO $= 1.57x = 0.47$~eV.}
+\end{tabular}
+\end{table}
+
+% ── Fig 2: Band diagram ──
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../../results/sispad_scba_2026-04-14/fig2_band_diagram.pdf}
+\caption{\textbf{Conduction-band profile of the symmetric
+ZnO/Mg\textsubscript{0.3}Zn\textsubscript{0.7}O RTD.}
+2~nm MgZnO barriers / 3~nm ZnO well / 10~nm $n^+$-ZnO contacts
+($\Delta E_c = 0.47$~eV, $m^* = 0.28\,m_0$, pixel area
+$10\,\mu\mathrm{m}\!\times\!10\,\mu\mathrm{m}$).
+(a)~At $V\!=\!0$: single bound state $E_1 = 149$~meV; orange shading shows
+the Gaussian molecular coupling profile $\chi(z)$ centered on the
+emitter barrier.
+(b)~At resonance $V = V_{\mathrm{res}} \approx 552$~mV: $E_1$ aligns with
+$\mu_L$, enabling resonant tunneling (red arrow). Symmetric bias
+convention $\mu_{L,R} = E_F \pm V/2$.}
+\label{fig:device}
+\end{figure}
+
+% ── Fig 3: Flowchart ──
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../../results/sispad_scba_2026-04-14/fig3_flowchart.pdf}
+\caption{\textbf{Simulation methodology: rank-1 projected NEGF--SCBA.}
+The molecular vibron coupling matrix $M = D_0\,\chi(z)\,|u\rangle\langle u|$
+is rank-1 in the transverse-mode basis for \emph{any} transverse grid size
+(not only $3\!\times\!3$), collapsing the full 3D SCBA to a single 1D
+projected Dyson equation. The SCBA loop is converged with Anderson mixing
+(DIIS, history depth $M\!=\!8$, damping $\beta\!=\!0.3$) to tolerance
+$10^{-4}$, achieving current conservation $|I_L\!+\!I_R|/\max(|I|) < 0.2\%$
+at all bias points. $d^2I/dV^2$ is computed by numerical
+double-differentiation of the converged $I(V)$---no smoothing.}
+\label{fig:flowchart}
+\end{figure}
+
+% ── Fig 4: I-V ──
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../../results/sispad_scba_2026-04-14/fig4_IV.pdf}
+\caption{\textbf{I--V characteristics at 300~K (SCBA, Anderson mixing).}
+Symmetric 2/3/2~nm ZnO/MgZnO RTD, 201 bias points, $dE = 2$~meV.
+Four species: Baseline (bulk 72~meV LO phonon only), Mol~A
+($\hbar\omega = 100$~meV), Mol~B ($\hbar\omega = 180$~meV), and Mol~AB
+(both modes). All show clean NDR at $V_{\mathrm{res}} \approx 552$~mV
+with peak current $\sim$72~nA and PVR $\sim$6. Molecular vibrons open phonon-assisted
+tunneling channels that produce molecule-specific current differences
+visible in the pre-NDR region (200--500~mV).}
+\label{fig:iv}
+\end{figure}
+
+% ── Fig 5: d²I/dV² ──
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../../results/sispad_scba_2026-04-14/fig5_d2IdV2.pdf}
+\caption{\textbf{Numerical $d^2I/dV^2$ at 300~K.}
+Computed by $\mathrm{diff}(\mathrm{diff}(I))/dV^2$ on the converged SCBA
+current---exactly the procedure used by Patil~\cite{patil2018}, with no
+smoothing applied. Peaks near 100 and 180~mV correspond to phonon-assisted
+tunneling thresholds. The large negative swing at $\sim$552~mV marks the NDR.
+Self-consistent SCBA produces inherently smooth $I(V)$, so the raw numerical
+second derivative is directly usable as a molecular fingerprint.}
+\label{fig:d2i}
+\end{figure}
+
+% ── Fig 6: ΔI ──
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../../results/sispad_scba_2026-04-14/fig6_deltaI.pdf}
+\caption{\textbf{Current difference from Baseline:}
+$\Delta I(V) = I_{\mathrm{mol}}(V) - I_{\mathrm{BL}}(V)$.
+Phonon-assisted tunneling through the molecular vibron opens an additional
+current channel at $V \approx \hbar\omega_{\mathrm{mol}}/e$.
+Mol~A (100~meV mode) shows $\sim$2~nA enhancement in the 200--400~mV
+region. Mol~AB tracks Mol~A closely (dominated by the lower-energy mode),
+confirming approximate superposition of the rank-1 contributions at
+weak coupling ($D_0^2 = 0.1$~eV$^2$).}
+\label{fig:deltaI}
+\end{figure}
+
+% ── Fig 7: ΔD ──
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../../results/sispad_scba_2026-04-14/fig7_deltaD.pdf}
+\caption{\textbf{IETS discrimination metric}
+$\Delta D(V) = d^2I_{\mathrm{mol}}/dV^2 - d^2I_{\mathrm{BL}}/dV^2$.
+This isolates the molecule-specific vibrational signature by subtracting
+the bulk-phonon background. Each molecule produces a distinct $\Delta D(V)$
+pattern whose peak positions correspond to the vibrational mode energies.
+Mol~AB exhibits approximate superposition of the Mol~A and Mol~B
+signatures---a direct consequence of the rank-1 coupling structure.}
+\label{fig:deltaD}
+\end{figure}
+
+% ── Fig 8: Temperature dependence ──
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../../results/sispad_scba_2026-04-14/fig8_temp_dependence.pdf}
+\caption{\textbf{Temperature dependence of Mol~A
+($\hbar\omega = 100$~meV).}
+(a)~I--V at 10, 77, 150, and 300~K. The NDR peak sharpens and increases
+at lower $T$ (110~nA at 10~K vs.\ 73~nA at 300~K for Mol~A) due to reduced
+thermal smearing of the Fermi functions.
+(b)~$d^2I/dV^2$: IETS features sharpen at lower $T$, but remain
+clearly resolvable at 300~K---the RTD resonance provides an energy
+filter tighter than $k_BT$, enabling room-temperature vibrational
+fingerprinting without cryogenic cooling~\cite{patil2018}.}
+\label{fig:temp}
+\end{figure}
+
+\end{document}

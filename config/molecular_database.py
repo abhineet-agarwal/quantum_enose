@@ -33,7 +33,7 @@ MOLECULES = {
         "subclass": "Strong",
         "modes_cm1": [399, 637, 1084, 1485, 3189],
         "modes_meV": [49.5, 79.0, 134.4, 184.1, 395.4],
-        "coupling_meV": [5.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C6H6",
         "description": "Strong aromatic odor"
     },
@@ -43,7 +43,7 @@ MOLECULES = {
         "subclass": "Weak",
         "modes_cm1": [615, 826, 1147, 1446, 3206],
         "modes_meV": [76.3, 102.4, 142.2, 179.3, 397.5],
-        "coupling_meV": [5.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C14H10",
         "description": "Weak aromatic odor"
     },
@@ -53,7 +53,7 @@ MOLECULES = {
         "subclass": "Weak",
         "modes_cm1": [538, 758, 1043, 1424, 3258],
         "modes_meV": [66.7, 94.0, 129.3, 176.6, 403.9],
-        "coupling_meV": [5.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C4H4S",
         "description": "Weak aromatic odor with sulfur"
     },
@@ -64,7 +64,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [633, 816, 1011, 1498, 3311],
         "modes_meV": [78.5, 101.2, 125.4, 185.7, 410.6],
-        "coupling_meV": [5.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C4H4O",
         "description": "Roasted coffee aroma"
     },
@@ -74,7 +74,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [157, 684, 1025, 1526, 2650, 3251],
         "modes_meV": [19.5, 84.8, 127.1, 189.2, 328.6, 403.1],
-        "coupling_meV": [3.0, 5.0, 8.0, 10.0, 7.0, 5.0],
+        "coupling_meV": [95.0, 158.0, 253.0, 316.0, 221.0, 158.0],
         "formula": "C5H6OS",
         "description": "Roasted coffee with meaty note"
     },
@@ -85,7 +85,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [151, 441, 842, 1150, 1515, 3213],
         "modes_meV": [18.7, 54.7, 104.4, 142.6, 187.8, 398.4],
-        "coupling_meV": [3.0, 5.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [95.0, 158.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C10H8",
         "description": "Classic moth-ball odor"
     },
@@ -95,7 +95,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [118, 468, 827, 1147, 1471, 3080],
         "modes_meV": [14.6, 58.0, 102.5, 142.2, 182.4, 381.9],
-        "coupling_meV": [3.0, 5.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [95.0, 158.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C10H12",
         "description": "Moth-ball with petroleum note"
     },
@@ -105,7 +105,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [137, 463, 871, 1126, 1456, 3193],
         "modes_meV": [17.0, 57.4, 108.0, 139.6, 180.5, 395.9],
-        "coupling_meV": [3.0, 5.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [95.0, 158.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C13H10",
         "description": "Moth-ball odor"
     },
@@ -116,7 +116,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [79, 883, 1287, 1817, 3046],
         "modes_meV": [9.8, 109.5, 159.6, 225.3, 377.7],
-        "coupling_meV": [3.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [95.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C7H14O",
         "description": "Citrus fruity odor"
     },
@@ -126,7 +126,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [118, 846, 1157, 1386, 1780, 3066],
         "modes_meV": [14.6, 104.9, 143.5, 171.9, 220.7, 380.2],
-        "coupling_meV": [3.0, 5.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [95.0, 158.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C9H18O2",
         "description": "Pear/apple fruity odor"
     },
@@ -136,7 +136,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [112, 820, 1263, 1816, 3066],
         "modes_meV": [13.9, 101.7, 156.6, 225.2, 380.2],
-        "coupling_meV": [3.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [95.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C8H14O2",
         "description": "Coconut fruity odor"
     },
@@ -147,7 +147,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [240, 1044, 1377, 3009],
         "modes_meV": [29.8, 129.5, 170.7, 373.1],
-        "coupling_meV": [5.0, 8.0, 10.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 158.0],
         "formula": "C17H30O",
         "description": "Animal musk odor"
     },
@@ -157,7 +157,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [292, 993, 1370, 3029],
         "modes_meV": [36.2, 123.1, 169.9, 375.6],
-        "coupling_meV": [5.0, 8.0, 10.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 158.0],
         "formula": "C12H16",
         "description": "Synthetic musk"
     },
@@ -167,7 +167,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [318, 989, 1373, 3035],
         "modes_meV": [39.4, 122.6, 170.2, 376.3],
-        "coupling_meV": [5.0, 8.0, 10.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 158.0],
         "formula": "C18H26O",
         "description": "Polycyclic musk"
     },
@@ -177,7 +177,7 @@ MOLECULES = {
         "subclass": None,
         "modes_cm1": [280, 999, 1359, 3029],
         "modes_meV": [34.7, 123.9, 168.5, 375.6],
-        "coupling_meV": [5.0, 8.0, 10.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 158.0],
         "formula": "C17H26O",
         "description": "Macrocyclic musk"
     },
@@ -188,7 +188,7 @@ MOLECULES = {
         "subclass": "Artificial",
         "modes_cm1": [260, 881, 1091, 1454, 2585, 3193],
         "modes_meV": [32.2, 109.2, 135.3, 180.3, 320.5, 395.9],
-        "coupling_meV": [5.0, 8.0, 10.0, 8.0, 7.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 253.0, 221.0, 158.0],
         "formula": "C7H8S",
         "description": "Artificial sulfurous-garlic"
     },
@@ -198,7 +198,7 @@ MOLECULES = {
         "subclass": "Artificial",
         "modes_cm1": [272, 927, 1313, 1696, 2602, 3086],
         "modes_meV": [33.7, 114.9, 162.8, 210.3, 322.6, 382.7],
-        "coupling_meV": [5.0, 8.0, 10.0, 8.0, 7.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 253.0, 221.0, 158.0],
         "formula": "C3H6S",
         "description": "Artificial garlic odor"
     },
@@ -208,7 +208,7 @@ MOLECULES = {
         "subclass": "Artificial",
         "modes_cm1": [226, 885, 1371, 3051],
         "modes_meV": [28.0, 109.7, 170.0, 378.3],
-        "coupling_meV": [5.0, 8.0, 10.0, 5.0],
+        "coupling_meV": [158.0, 253.0, 316.0, 158.0],
         "formula": "C2H6S",
         "description": "Sulfurous odor"
     },
@@ -218,7 +218,7 @@ MOLECULES = {
         "subclass": "Natural",
         "modes_cm1": [110, 439, 922, 1254, 1724, 3070],
         "modes_meV": [13.6, 54.4, 114.3, 155.5, 213.8, 380.7],
-        "coupling_meV": [3.0, 5.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [95.0, 158.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C6H10S2",
         "description": "Natural garlic (from Allium)"
     },
@@ -228,9 +228,52 @@ MOLECULES = {
         "subclass": "Natural",
         "modes_cm1": [120, 382, 958, 1313, 1692, 3109],
         "modes_meV": [14.9, 47.4, 118.8, 162.8, 209.8, 385.5],
-        "coupling_meV": [3.0, 5.0, 8.0, 10.0, 8.0, 5.0],
+        "coupling_meV": [95.0, 158.0, 253.0, 316.0, 253.0, 158.0],
         "formula": "C6H10OS2",
         "description": "Natural garlic (main component)"
+    },
+
+    # ========== FICTIONAL SINGLE-MODE MOLECULES (for IETS methodology validation) ==========
+    # These are model/fictional molecules defined for controlled simulation studies.
+    # Mode energies are representative of well-known vibrational classes in IETS literature.
+
+    "Mol_A": {
+        "class": "Fictional",
+        "subclass": "Single-mode",
+        "modes_cm1": [807],
+        "modes_meV": [100.0],
+        "coupling_meV": [316.2],
+        "formula": "Model",
+        "description": "Fictional single-mode molecule A: C-H out-of-plane bending (807 cm-1 / 100 meV). "
+                       "Representative of ring-system C-H deformation modes (Hansma, Phys. Rep. 1977). "
+                       "Coupling D=316.2 meV (D2=0.1 eV2, matches Patil Dnu=0.1). "
+                       "No bulk phonon (Patil D0=0 convention)."
+    },
+
+    "Mol_B": {
+        "class": "Fictional",
+        "subclass": "Single-mode",
+        "modes_cm1": [1452],
+        "modes_meV": [180.0],
+        "coupling_meV": [316.2],
+        "formula": "Model",
+        "description": "Fictional single-mode molecule B: CH2 scissors deformation (1452 cm-1 / 180 meV). "
+                       "Representative of saturated C-H bending modes (Jaklevic & Lambe, PRL 1966). "
+                       "Coupling D=316.2 meV (D2=0.1 eV2, matches Patil Dnu=0.1). "
+                       "No bulk phonon (Patil D0=0 convention)."
+    },
+
+    "Mol_AB": {
+        "class": "Fictional",
+        "subclass": "Two-mode",
+        "modes_cm1": [807, 1452],
+        "modes_meV": [100.0, 180.0],
+        "coupling_meV": [316.2, 316.2],
+        "formula": "Model",
+        "description": "Fictional two-mode molecule AB: combines modes of Mol_A (807 cm-1 / 100 meV) and "
+                       "Mol_B (1452 cm-1 / 180 meV). "
+                       "Coupling D=316.2 meV per mode (D2=0.1 eV2, matches Patil Dnu=[0.1,0.1]). "
+                       "No bulk phonon (Patil D0=0 convention)."
     }
 }
 

@@ -1,22 +1,15 @@
+# Environments / caches
 venv/
 __pycache__/
 *.pyc
 .DS_Store
 .env
 
-# Output directories
-results/
-batch_results/
-figures_publication/
-logs/
-data/
-
-# Archived redundant scripts
+# Archived / non-production material — kept locally, not versioned
 archive/
 
-# Debug scripts
-debug/
+# Results: version ONLY the SISPAD paper results dir, ignore everything else
+results/*
+!results/sispad_scba_2026-04-14/
 
-# Reference papers (large PDFs)
-papers/
-
+# papers/ (reference PDFs + LaTeX sources + poster) is now versioned.

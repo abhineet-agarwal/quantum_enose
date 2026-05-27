@@ -44,6 +44,25 @@ BAND_OFFSETS = {
     ("IGZO", "SiO2"): 3.5,        # From Hays et al. review
     ("ZnO", "SiO2"): 3.5,         # Estimated
     ("SnO2", "SiO2"): 3.5,        # Estimated
+
+    # ==========================================================================
+    # LOW-BARRIER OXIDE COMBINATIONS (IDEAL FOR IETS - similar to Patil 0.6 eV)
+    # ==========================================================================
+    # References:
+    # - ACS Appl. Electron. Mater. 2020: κ-Ga2O3/In2O3 CBO = 0.45 eV
+    # - In2O3/Ga2O3 CBO = 0.07 eV (type-I alignment)
+    # - Scientific Reports 2017: ZnO/MgZnO tunable CBO
+
+    # In2O3/Ga2O3 system (PRIMARY CANDIDATE FOR IETS)
+    ("In2O3", "Ga2O3"): 0.07,           # β-Ga2O3 barrier, very low CBO
+    ("In2O3", "Ga2O3_kappa"): 0.45,     # κ-Ga2O3 barrier, ideal for IETS!
+
+    # ZnO/MgZnO system (tunable barrier)
+    ("ZnO", "MgZnO"): 0.47,             # For Mg0.3Zn0.7O (CBO = 1.57x)
+
+    # Cross-combinations
+    ("IGZO", "Ga2O3"): 0.10,            # Estimated from similar systems
+    ("ZnO", "Ga2O3"): 0.61,             # From ZnO/α-Ga2O3 XPS measurements
 }
 
 def get_band_offset(well_material, barrier_material):
@@ -198,6 +217,41 @@ MATERIALS = {
         "description": "Silicon Dioxide (barrier, BEOL-compatible)",
         "process_temp": 300,
         "notes": "PECVD <400°C, standard CMOS dielectric"
+    },
+
+    # ========== LOW-BARRIER OXIDE SEMICONDUCTORS (for IETS) ==========
+    "Ga2O3": {
+        "m_eff": 0.28,   # Effective mass (β-Ga2O3, Peelaers & Van de Walle PRB 2015)
+        "Ec": 0.07,      # CBO relative to In2O3 (from ACS Appl. Electron. Mater. 2020)
+        "Eg": 4.9,       # Band gap (eV) - ultra-wide bandgap
+        "chi": 4.0,      # Electron affinity (eV)
+        "epsilon_r": 10.0,
+        "phonon_energy_meV": 44.0,  # Dominant LO phonon
+        "description": "Gallium Oxide (low-barrier for In2O3, BEOL-compatible)",
+        "process_temp": 300,
+        "notes": "ALD 100-400°C, sputtering 300°C, CBO~0.07-0.45 eV vs In2O3"
+    },
+    "Ga2O3_kappa": {
+        "m_eff": 0.28,   # κ-phase Ga2O3
+        "Ec": 0.45,      # Higher CBO for κ-phase/In2O3 interface
+        "Eg": 4.9,       # Band gap (eV)
+        "chi": 3.6,      # Slightly different electron affinity
+        "epsilon_r": 10.0,
+        "phonon_energy_meV": 44.0,
+        "description": "κ-phase Gallium Oxide (0.45 eV barrier vs In2O3)",
+        "process_temp": 350,
+        "notes": "ALD/sputtering <400°C, CBO=0.45 eV ideal for IETS"
+    },
+    "MgZnO": {
+        "m_eff": 0.30,   # Mg0.3Zn0.7O effective mass
+        "Ec": 0.47,      # CBO = 1.57x for x=0.3 Mg content
+        "Eg": 4.0,       # Band gap increases with Mg content
+        "chi": 4.2,      # Electron affinity
+        "epsilon_r": 8.5,
+        "phonon_energy_meV": 70.0,
+        "description": "MgZnO alloy barrier (tunable CBO)",
+        "process_temp": 350,
+        "notes": "ALD/sputtering <350°C, CBO=1.57x where x=Mg fraction"
     }
 }
 
@@ -386,6 +440,138 @@ DEVICES = {
         "transverse_size": (1e-6, 1e-6),
         "molecule_location": "emitter_barrier",
         "notes": "High-k dielectric, may reduce leakage current"
+    },
+
+    # ==========================================================================
+    # LOW-BARRIER RTD DEVICES FOR IETS (CBO ~ 0.5 eV like Patil et al.)
+    # ==========================================================================
+    # These devices use low-barrier oxide combinations suitable for room-temperature
+    # IETS molecular detection, following Patil et al. 2018 (Sci. Rep.)
+
+    "In2O3_Ga2O3_symmetric": {
+        "description": "In2O3/Ga2O3 RTD (LOW BARRIER - ideal for IETS!)",
+        "layers": [
+            {"material": "In2O3", "thickness": 10e-9, "doping": 1e25},
+            {"material": "Ga2O3", "thickness": 2.0e-9, "doping": 0},    # CBO = 0.07 eV
+            {"material": "In2O3", "thickness": 3.0e-9, "doping": 0},    # 3nm well
+            {"material": "Ga2O3", "thickness": 2.0e-9, "doping": 0},
+            {"material": "In2O3", "thickness": 10e-9, "doping": 1e25}
+        ],
+        "transverse_size": (1e-6, 1e-6),
+        "molecule_location": "emitter_barrier",
+        "notes": "CBO=0.07eV, ALD <400°C, PRIMARY IETS CANDIDATE"
+    },
+
+    "In2O3_Ga2O3_1nm": {
+        "description": "In2O3/Ga2O3 RTD with 1nm barriers",
+        "layers": [
+            {"material": "In2O3", "thickness": 10e-9, "doping": 1e25},
+            {"material": "Ga2O3", "thickness": 1.0e-9, "doping": 0},    # Ultra-thin
+            {"material": "In2O3", "thickness": 3.0e-9, "doping": 0},
+            {"material": "Ga2O3", "thickness": 1.0e-9, "doping": 0},
+            {"material": "In2O3", "thickness": 10e-9, "doping": 1e25}
+        ],
+        "transverse_size": (1e-6, 1e-6),
+        "molecule_location": "emitter_barrier",
+        "notes": "Ultra-thin barriers for maximum transmission"
+    },
+
+    "In2O3_Ga2O3_kappa_symmetric": {
+        "description": "In2O3/κ-Ga2O3 RTD (CBO=0.45eV - matches Patil!)",
+        "layers": [
+            {"material": "In2O3", "thickness": 10e-9, "doping": 1e25},
+            {"material": "Ga2O3_kappa", "thickness": 2.0e-9, "doping": 0},  # CBO = 0.45 eV
+            {"material": "In2O3", "thickness": 3.0e-9, "doping": 0},
+            {"material": "Ga2O3_kappa", "thickness": 2.0e-9, "doping": 0},
+            {"material": "In2O3", "thickness": 10e-9, "doping": 1e25}
+        ],
+        "transverse_size": (1e-6, 1e-6),
+        "molecule_location": "emitter_barrier",
+        "notes": "CBO=0.45eV. SISPAD *comparison* stack (demoted 2026-04-07, see docs/STACK_DECISION.md); primary is ZnO_MgZnO_asymmetric. κ-phase metastability + single-source CBO + no demonstrated RTD are the reviewer flags."
+    },
+
+    "In2O3_Ga2O3_kappa_1nm": {
+        "description": "In2O3/κ-Ga2O3 RTD with 1nm barriers",
+        "layers": [
+            {"material": "In2O3", "thickness": 10e-9, "doping": 1e25},
+            {"material": "Ga2O3_kappa", "thickness": 1.0e-9, "doping": 0},
+            {"material": "In2O3", "thickness": 3.0e-9, "doping": 0},
+            {"material": "Ga2O3_kappa", "thickness": 1.0e-9, "doping": 0},
+            {"material": "In2O3", "thickness": 10e-9, "doping": 1e25}
+        ],
+        "transverse_size": (1e-6, 1e-6),
+        "molecule_location": "emitter_barrier",
+        "notes": "CBO=0.45eV, ultra-thin barriers"
+    },
+
+    "In2O3_Ga2O3_kappa_asymmetric": {
+        "description": "In2O3/κ-Ga2O3 asymmetric RTD (wide emitter for sensing)",
+        "layers": [
+            {"material": "In2O3", "thickness": 10e-9, "doping": 1e25},
+            {"material": "Ga2O3_kappa", "thickness": 3.0e-9, "doping": 0},  # Wide emitter
+            {"material": "In2O3", "thickness": 3.0e-9, "doping": 0},
+            {"material": "Ga2O3_kappa", "thickness": 1.5e-9, "doping": 0},  # Thin collector
+            {"material": "In2O3", "thickness": 10e-9, "doping": 1e25}
+        ],
+        "transverse_size": (1e-6, 1e-6),
+        "molecule_location": "emitter_barrier",
+        "notes": "Asymmetric Patil geometry. SISPAD *comparison* stack — the in-flight v3 cloud run uses this at 1 µm. Primary is ZnO_MgZnO_asymmetric (see docs/STACK_DECISION.md)."
+    },
+
+    "ZnO_MgZnO_symmetric": {
+        "description": "ZnO/Mg0.3Zn0.7O RTD (tunable barrier, CBO~0.47eV) — SISPAD primary (symmetric variant)",
+        "layers": [
+            {"material": "ZnO", "thickness": 10e-9, "doping": 1e25},
+            {"material": "MgZnO", "thickness": 2.0e-9, "doping": 0},    # CBO = 0.47 eV
+            {"material": "ZnO", "thickness": 3.0e-9, "doping": 0},
+            {"material": "MgZnO", "thickness": 2.0e-9, "doping": 0},
+            {"material": "ZnO", "thickness": 10e-9, "doping": 1e25}
+        ],
+        "transverse_size": (10e-6, 10e-6),  # 10 µm × 10 µm = 10^-7 cm^2 sensor-pixel area (Datta A prefactor; see docs/STACK_DECISION.md)
+        "molecule_location": "emitter_barrier",
+        "notes": "SISPAD PRIMARY (sym variant). CBO=0.47eV for x_Mg=0.3 (multi-source, tunable as 1.57*x_Mg); ALD-matured process; demonstrated NDR in ZnO/Mg0.33Zn0.67O RTD by Tampo et al., IEEE NANO 2019. m*=0.28 m0 (ZnO well), LO phonon ~72 meV. Swapped in for In2O3/κ-Ga2O3 2026-04-07."
+    },
+
+    "ZnO_MgZnO_asymmetric": {
+        "description": "ZnO/Mg0.3Zn0.7O RTD, Patil-style asymmetric (3 nm emitter / 1.5 nm collector) — SISPAD primary",
+        "layers": [
+            {"material": "ZnO", "thickness": 10e-9, "doping": 1e25},
+            {"material": "MgZnO", "thickness": 3.0e-9, "doping": 0},    # Wide emitter barrier (sensing area)
+            {"material": "ZnO", "thickness": 3.0e-9, "doping": 0},      # Quantum well
+            {"material": "MgZnO", "thickness": 1.5e-9, "doping": 0},    # Thin collector (good extraction)
+            {"material": "ZnO", "thickness": 10e-9, "doping": 1e25}
+        ],
+        "transverse_size": (10e-6, 10e-6),  # 10 µm × 10 µm = 10^-7 cm^2 sensor-pixel area (Datta A prefactor; see docs/STACK_DECISION.md)
+        "molecule_location": "emitter_barrier",
+        "notes": "SISPAD PRIMARY (asym variant). Patil's 3/1.5 nm asymmetry mirrored onto ZnO/Mg0.3Zn0.7O: wide emitter barrier maximises molecule-resonance overlap, thin collector keeps transmission. Physics numbers match In2O3/κ-Ga2O3 closely (CBO 0.47 vs 0.45 eV, m* 0.28 vs 0.30, ℏω 72 vs 70 meV) so results transfer. Gains over the κ-Ga2O3 stack: stable wurtzite phase (vs metastable κ), decades-old ALD maturity, tunable CBO via x_Mg, and an *experimentally demonstrated* NDR device. Added 2026-04-07, paired with launch_cloud_v4.sh and --solver rank1."
+    },
+
+    "ZnO_MgZnO_patil_like": {
+        "description": "ZnO/Mg0.3Zn0.7O RTD, Patil-like geometry (2nm/5nm/2nm symmetric)",
+        "layers": [
+            {"material": "ZnO", "thickness": 10e-9, "doping": 1e25},
+            {"material": "MgZnO", "thickness": 2.0e-9, "doping": 0},    # CBO = 0.47 eV
+            {"material": "ZnO", "thickness": 5.0e-9, "doping": 0},      # 5nm well (Patil used 5nm)
+            {"material": "MgZnO", "thickness": 2.0e-9, "doping": 0},
+            {"material": "ZnO", "thickness": 10e-9, "doping": 1e25}
+        ],
+        "transverse_size": (10e-6, 10e-6),
+        "molecule_location": "emitter_barrier",
+        "notes": "Patil-like thicknesses (2nm/5nm/2nm symmetric) on ZnO/MgZnO stack. Patil's GaAs/AlGaAs had CBO=0.23eV, m*=0.067, V_res~0.336V. This stack has CBO=0.47eV, m*=0.28 — heavier mass and higher barrier shift V_res. The wider 5nm well lowers E1 and should bring NDR into the 0-500mV range. Added 2026-04-09."
+    },
+
+    "ZnO_Ga2O3_symmetric": {
+        "description": "ZnO/Ga2O3 RTD (CBO~0.61eV - closest to Patil)",
+        "layers": [
+            {"material": "ZnO", "thickness": 10e-9, "doping": 1e25},
+            {"material": "Ga2O3", "thickness": 2.0e-9, "doping": 0},    # CBO = 0.61 eV
+            {"material": "ZnO", "thickness": 3.0e-9, "doping": 0},
+            {"material": "Ga2O3", "thickness": 2.0e-9, "doping": 0},
+            {"material": "ZnO", "thickness": 10e-9, "doping": 1e25}
+        ],
+        "transverse_size": (1e-6, 1e-6),
+        "molecule_location": "emitter_barrier",
+        "notes": "CBO=0.61eV very close to Patil 0.6eV!"
     }
 }
 

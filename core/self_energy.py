@@ -170,8 +170,87 @@ def local_projection_operator(Np, local_sites, neighbor_radius=0, decay=True):
     # Normalize so max is 1
     if P.max() > 0:
         P = P / P.max()
-    
+
     return P
+
+
+def gaussian_chi_projector(Np, mol_site, sigma_mol_m, dz_m, normalization="peak"):
+    """
+    Gaussian longitudinal form factor χ(z) for the rank-1 projected SCBA.
+
+    Replaces the Fix 6 heuristic (``local_projection_operator`` with
+    ``neighbor_radius = barrier_half_width``) by the physical Gaussian
+    χ(z) = exp(-(z - z_mol)^2 / (2·σ_mol^2)) derived from the isotropic
+    molecular form factor g(r) in ``docs/METHOD_DERIVATION.md`` §2, Eq. (1).
+
+    The rank-1 phonon self-energy kernel in longitudinal space is
+
+        σ̃^R(z, z'; E) = χ(z - z_mol) · σ̃^R_core(z, z'; E) · χ(z' - z_mol)
+
+    which, on the discrete grid, is exactly diag(χ) @ Σ @ diag(χ) — the same
+    sandwich structure the legacy top-hat projector already implements, with
+    the top-hat replaced by a Gaussian.
+
+    Parameters
+    ----------
+    Np : int
+        Number of longitudinal grid sites.
+    mol_site : int
+        Grid index of the molecule centre z_mol.
+    sigma_mol_m : float
+        Gaussian width σ_mol in metres (3e-10 for the SISPAD default).
+    dz_m : float
+        Grid spacing in metres.
+    normalization : {"peak", "l1", "l2"}, optional
+        * ``"peak"`` (default): max(χ) = 1. Preserves the existing D₀
+          calibration convention — the SCBA coupling at the molecule centre
+          is D₀, and χ quietly tapers off in the neighbouring sites.
+        * ``"l1"``: Σ_i χ_i · dz = 1. Matches the continuum normalization
+          ∫ χ(z) dz = 1 used in Eq. (1) of METHOD_DERIVATION. Use this when
+          D₀ is re-calibrated against a continuum Fröhlich/local-mode model.
+        * ``"l2"``: Σ_i χ_i² · dz = 1. Not physical for the Born kernel but
+          useful for diagnostic plots.
+
+    Returns
+    -------
+    chi : ndarray, shape (Np,)
+        Diagonal entries of the longitudinal Gaussian form factor. Caller
+        forms the full sandwich via ``chi[:, None] * Sigma * chi[None, :]``
+        or ``np.diag(chi) @ Sigma @ np.diag(chi)`` (equivalent, the first
+        form allocates no temporary).
+
+    Notes
+    -----
+    - For σ_mol = 3 Å and dz = 1.5 Å (typical oxide RTD grid), the Gaussian
+      spans ~5 grid sites FWHM. The legacy top-hat spanned the full emitter
+      barrier (~20 sites), inflating the effective coupling volume by ~4×.
+    - See ``tests/test_gaussian_chi.py`` for unit tests covering the three
+      normalization modes, the σ_mol → 0 limit, and the sandwich identity
+      against ``local_projection_operator`` at the wide-top-hat limit.
+    """
+    if sigma_mol_m <= 0:
+        raise ValueError(f"sigma_mol_m must be positive, got {sigma_mol_m}")
+    if dz_m <= 0:
+        raise ValueError(f"dz_m must be positive, got {dz_m}")
+    if not (0 <= mol_site < Np):
+        raise ValueError(f"mol_site {mol_site} out of range [0, {Np})")
+
+    i = np.arange(Np)
+    z = (i - mol_site) * dz_m                              # metres
+    chi = np.exp(-0.5 * (z / sigma_mol_m) ** 2)            # dimensionless
+
+    if normalization == "peak":
+        chi /= chi.max()                                   # max = 1
+    elif normalization == "l1":
+        chi /= (chi.sum() * dz_m)                          # ∫ χ dz = 1
+    elif normalization == "l2":
+        chi /= np.sqrt((chi ** 2).sum() * dz_m)            # ∫ χ² dz = 1
+    else:
+        raise ValueError(
+            f"normalization must be 'peak', 'l1', or 'l2', got {normalization!r}"
+        )
+
+    return chi
 
 # ============================================================================
 # PHONON SELF-ENERGIES (for SCBA)

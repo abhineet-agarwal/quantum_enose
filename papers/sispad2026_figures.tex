@@ -1,0 +1,135 @@
+%% SISPAD 2026 — figures + captions, kept separate from the main abstract
+%% file so captions can be iterated independently and dropped into
+%% papers/sispad2026_abstract.tex via \input{sispad2026_figures.tex}.
+%%
+%% Each caption is written to be fully self-contained: an expert in the
+%% field who reads only the paper title and this figure + caption should
+%% be able to tell what was done, how, and what was shown.
+%%
+%% Figure files (to be generated from results/2026-04-09/*.npz by
+%% run/plot_sispad_figs.py):
+%%
+%%   figs/fig1_device.pdf     — Device stack, band diagram, chi(z), rank-1 loop
+%%   figs/fig2_patil.pdf      — Patil 1D benchmark + conservation residual inset
+%%   figs/fig3_iv.pdf         — I–V of Baseline/Mol_A/Mol_B/Mol_AB on ZnO/MgZnO
+%%   figs/fig4_d2i.pdf        — Analytic d2I/dV2 for all 4 molecules
+%%   figs/fig5_discrimination.pdf — Baseline-subtracted discrimination metric
+%%
+%% Usage in sispad2026_abstract.tex:
+%%   \input{sispad2026_figures}
+%% or drop the individual \begin{figure}…\end{figure} blocks inline.
+%% ----------------------------------------------------------------------
+
+% --- Fig. 1 ----------------------------------------------------------------
+\begin{figure}[tbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figs/fig1_device.pdf}}
+\caption{\textbf{Device and methodology at a glance.}
+(a)~Layer stack of the asymmetric
+ZnO/Mg\textsubscript{0.3}Zn\textsubscript{0.7}O RTD: 10~nm $n^+$-ZnO emitter
+contact, 3~nm Mg\textsubscript{0.3}Zn\textsubscript{0.7}O emitter barrier
+(host of the sensing molecule), 3~nm ZnO quantum well, 1.5~nm
+Mg\textsubscript{0.3}Zn\textsubscript{0.7}O collector barrier, and 10~nm
+$n^+$-ZnO collector. Conduction-band offset $\Delta E_c = 0.47$~eV,
+effective mass $m^* = 0.28\,m_0$. The transverse area is
+$A = 10\,\mu\mathrm{m} \times 10\,\mu\mathrm{m}$, entering the current
+expression as a Datta ``Fix-$A$'' prefactor.
+(b)~Conduction-band profile at $V = 0$ and at $V = V_{\mathrm{res}}$, showing
+the quantized well level $E_{\mathrm{res}}$ crossing $E_F$ from above to
+give negative differential resistance.
+(c)~Molecular form factor $\chi(z)$, a Gaussian of width
+$\sigma_{\mathrm{mol}} = 3$~\AA\ centered at the emitter-barrier midpoint,
+defining the rank-1 electron--vibron coupling
+$M = D_0\,\chi(z)\,|u\rangle\langle u|$.
+(d)~Schematic of the rank-1 projected SCBA loop: a single
+scalar-in-mode-space, 1D-in-$z$ Dyson equation dressed self-consistently by
+the phonon self-energies $\tilde\sigma^{R,<,>}$. This replaces the full
+nine-mode coupled SCBA with machine-precision accuracy whenever
+$\sigma_{\mathrm{mol}} k_\perp \ll 1$.}
+\label{fig:device}
+\end{figure}
+
+% --- Fig. 2 ----------------------------------------------------------------
+\begin{figure}[tbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figs/fig2_patil.pdf}}
+\caption{\textbf{Validation against the Patil 1D benchmark (Tier-1 $\gamma$,
+$\delta$).}
+Right-contact current $I_R(V)$ of Patil's 1D symmetric RTD computed with
+the rank-1 Keldysh wrapper (red circles) overlaid on the Patil 1D reference
+from the published MATLAB code \texttt{rtd2modes\_1d.m} (black line). The
+rank-1 solver reproduces the NDR peak to 0.55\%:
+$I_R = 5.667 \times 10^{-10}$~A (rank-1) versus
+$5.698 \times 10^{-10}$~A (reference) at $V = 0.336$~V. The orange
+triangles show $-I_L$ on the same axes; the two traces would be exactly
+coincident for a perfectly converged SCBA solution.
+Inset: the per-bias current-conservation residual
+$|I_L + I_R| / \max(|I_L|,|I_R|)$ in log scale. Exposing both contacts lets
+us read $\delta$ directly from the Meir--Wingreen trace without any
+auxiliary bookkeeping. All parameters (device, mesh, bias convention,
+phonon modes, coupling, temperature) are identical to the reference.}
+\label{fig:patil}
+\end{figure}
+
+% --- Fig. 3 ----------------------------------------------------------------
+\begin{figure}[tbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figs/fig3_iv.pdf}}
+\caption{\textbf{Current--voltage characteristics of the ZnO/MgZnO primary
+stack at 300~K.}
+Rank-1 projected SCBA sweep (\texttt{max\_iter}$=10$, mix$=0.4$) on the
+asymmetric ZnO/Mg\textsubscript{0.3}Zn\textsubscript{0.7}O RTD for the
+four test species: Baseline (blank reference, bulk ZnO LO phonon at 72~meV
+only, no molecule), Mol\_A (single vibrational mode $\hbar\omega_A =
+100$~meV), Mol\_B ($\hbar\omega_B = 180$~meV), and Mol\_AB (both modes).
+All molecules couple with $D_0^2 = 0.1\,\mathrm{eV}^2$ through a Gaussian
+form factor of width 3~\AA\ centered on the emitter-barrier midpoint. Each
+trace shows a clean NDR feature at $V \approx V_{\mathrm{res}}$; the phonon
+sidebands pull current into the sub-resonance region, shifting the turn-on
+and broadening the NDR step in a mode-specific way. Bias grid: 201~points
+over 0--400~mV. Energy grid: $dE = 2$~meV over $[-0.25, +0.5]$~eV.
+$E_F = 20$~meV. No numerical differentiation is applied to $I(V)$
+anywhere in this work; the $d^2I/dV^2$ in Fig.~\ref{fig:d2i} comes from
+the closed-form formula~(\ref{eq:d2i}) evaluated on the same converged
+Keldysh state used to build this figure.}
+\label{fig:iv}
+\end{figure}
+
+% --- Fig. 4 ----------------------------------------------------------------
+\begin{figure}[tbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figs/fig4_d2i.pdf}}
+\caption{\textbf{Analytic $d^2I_R/dV^2$ --- vibrational fingerprints at
+300~K.}
+The second derivative is computed in closed form directly from the
+converged Keldysh state at each bias via
+$d^2I_R/dV^2 = (e^2/h)\cdot(1/4)\int dE\,[f_L''(E,V)\,T_{RL}(E) +
+f_R''(E,V)\,(T_{RR}(E) - T_{RA}(E))]$, with the kernels
+$T_{RL}, T_{RR}, T_{RA}$ built once from
+$(G^R,\Gamma_L,\Gamma_R)$ at each bias --- no numerical $V$-grid
+differentiation. At $D_0=0$ the formula reduces to the Landauer coherent
+expression by the optical theorem
+$T_{RA} = T_{RL} + T_{RR}$ (unit-tested to $10^{-6}$).
+Mol\_A shows a peak at $V \approx V_{\mathrm{res}} + \hbar\omega_A/e \approx
+187$~mV; Mol\_B at $V \approx V_{\mathrm{res}} + \hbar\omega_B/e \approx
+267$~mV; Mol\_AB shows both features simultaneously. Baseline has a shared
+feature at $\sim 162$~mV from the 72~meV bulk LO phonon. Red ticks mark the
+predicted sideband biases: these are \emph{not fits}.}
+\label{fig:d2i}
+\end{figure}
+
+% --- Fig. 5 ----------------------------------------------------------------
+\begin{figure}[tbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figs/fig5_discrimination.pdf}}
+\caption{\textbf{Discrimination metric
+$\Delta D(V) = d^2I_{\mathrm{mol}}/dV^2 - d^2I_{\mathrm{Baseline}}/dV^2$.}
+Baseline-subtracted second-derivative spectra isolate the molecular IETS
+contribution from the bulk-phonon and coherent backgrounds. The 100~meV
+and 180~meV modes produce non-overlapping features separated by 80~mV,
+well outside the thermal broadening $3k_BT/e \approx 78$~mV at 300~K. For
+Mol\_AB the two features add linearly ($\Delta D_{AB}(V) \approx
+\Delta D_A(V) + \Delta D_B(V)$ within numerical noise), a direct
+demonstration of the closed-form analytic second-derivative (\ref{eq:d2i})
+acting on a mixed analyte. The peak-to-peak values
+$|\Delta D|_{\max}$ for each single-mode species are the figures of merit
+for pixel-level discrimination. No lock-in or smoothing of any kind is
+applied: the signal here is the direct output of the closed-form
+(\ref{eq:d2i}) minus its Baseline evaluation.}
+\label{fig:disc}
+\end{figure}
