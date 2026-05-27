@@ -1,5 +1,10 @@
 # Patil 1D benchmark — SISPAD Tier-1 item γ
 
+> **Note (2026-05-27):** the live benchmark is `tests/test_patil_reference.py` +
+> `tests/test_patil_octave_match.py`. Mentions below of `scba_solver_hybrid.py`
+> as the "production solver" and `run_iets.py` are historical — both are now under
+> `archive/`; the production solver is `core/scba_rank1_keldysh.py`.
+
 **Status:** 2026-04-08, **qualitatively matched** against Patil Fig. 2(a)/(b).
 **Reference port:** `tests/patil_reference_1d.py`
 **Reference output:** `tests/patil_reference_1d.npz` (76 V-points,

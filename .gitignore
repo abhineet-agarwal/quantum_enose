@@ -7,9 +7,10 @@ __pycache__/
 
 # Archived / non-production material — kept locally, not versioned
 archive/
-
+.claude/
+docs/
 # Results: version ONLY the SISPAD paper results dir, ignore everything else
 results/*
 !results/sispad_scba_2026-04-14/
-
+rules.md
 # papers/ (reference PDFs + LaTeX sources + poster) is now versioned.

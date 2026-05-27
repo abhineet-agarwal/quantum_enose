@@ -4,7 +4,13 @@
 **Status:** Locked for the SISPAD submission (deadline 2026-04-22, extended
 from 2026-04-10).
 **Related docs:** `docs/METHOD_DERIVATION.md` (rank-1 projected SCBA),
-`docs/SISPAD_ABSTRACT_DRAFT.md`, `docs/SISPAD_CHECKLIST.md`.
+`docs/REPRODUCE_SISPAD.md`. (The earlier abstract draft + checklist are now under
+`archive/docs/`.)
+
+> **Note (2026-05-27):** the decision below — ZnO/Mg₀.₃Zn₀.₇O symmetric stack,
+> 10 µm pixel as a Datta prefactor — is current and implemented in
+> `config/device_library.py` (`ZnO_MgZnO_symmetric`). Mentions of `run_iets.py`
+> and `launch_cloud_v*.sh` are historical; those files are now under `archive/`.
 **Supersedes:** an earlier (now-deleted) `TRANSVERSE_SIZE_DECISION.md` that was
 written post-compaction around the *wrong* stack. The correct decision is
 documented here from scratch.

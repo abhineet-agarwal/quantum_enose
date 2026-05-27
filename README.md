@@ -1,377 +1,95 @@
-# 🎯 Quantum Electronic Nose Simulator
+# Quantum Electronic Nose — ZnO/MgZnO RTD-IETS (NEGF-SCBA)
 
-**Complete NEGF-SCBA Framework for RTD-IETS Molecular Detection**
+NEGF study of **room-temperature Inelastic Electron Tunneling Spectroscopy
+(IETS)** in a BEOL-compatible **ZnO/Mg₀.₃Zn₀.₇O resonant tunneling diode (RTD)**,
+operated as a quantum biomimetic electronic nose. Agarwal & Ganguly, IIT Bombay —
+SISPAD 2026 (`SISPAD_2026_Abhineet-9.pdf`).
 
-> Room-temperature odorant detection using oxide semiconductor resonant tunneling diodes and inelastic electron tunneling spectroscopy
-
----
-
-## Overview
-
-This is a **complete quantum transport simulation framework** for designing and analyzing oxide-based RTD sensors that detect molecules through vibrational fingerprinting at room temperature.
-
-### Key Capabilities
-
-- 🔬 **Multi-phonon NEGF-SCBA**: Self-consistent treatment of bulk + molecular vibrations
-- 🏭 **BEOL-compatible materials**: In₂O₃, IGZO, ZnO, SnO₂ (all <400°C processes)
-- 🌡️ **Room temperature operation**: 300K molecular detection
-- 📊 **21 odorant database**: From Pandey et al. 2021 reference
-- 🎯 **>90% selectivity target**: Molecular classification by perceptual class
-- 📈 **Production-ready**: Batch screening, analysis, visualization
+The transport problem is solved with a **rank-1 projected NEGF-SCBA**: a localized
+molecular vibron whose transverse-mode coupling matrix is rank-1 (to O(10⁻⁶) for
+σ_mol ≈ 3 Å) collapses the 3D phonon-dressed NEGF problem to a single projected 1D
+SCBA loop. Derivation: `docs/METHOD_DERIVATION.md`.
 
 ---
 
-## Quick Start
-
-### 1. Validate Installation
-
-```bash
-cd /mnt/user-data/outputs/quantum_enose
-python quick_test.py
-```
-
-Expected: All 5 tests pass in ~60 seconds
-
-### 2. Run Single Molecule
-
-```bash
-# Default: Benzene on In2O3/Al2O3
-python run/run_single_molecule.py
-
-# Custom: specify device and molecule
-python run/run_single_molecule.py IGZO_Al2O3_symmetric Toluene
-```
-
-Output: `results/[device]_[molecule]_IETS.csv`
-
-### 3. Batch Screening
-
-```bash
-# Test mode (3 molecules, ~5 min)
-python run/run_batch.py test
-
-# Aromatic class (~20 min)
-python run/run_batch.py Aromatic
-
-# All 21 molecules (~2 hours)
-python run/run_batch.py all
-```
-
-Output: `batch_results/` with individual CSVs + summary
-
----
-
-## Architecture
-
-### Module Hierarchy
+## What's here (production pipeline)
 
 ```
 quantum_enose/
-├── config/               # Configuration & databases
-│   ├── molecular_database.py    # 21 molecules, 6 classes
-│   └── device_library.py        # 12 RTD devices
-├── core/                # Core physics (NEGF)
-│   ├── hamiltonian.py           # Tight-binding
-│   ├── green_functions.py       # Green's functions
-│   ├── self_energy.py           # Contacts & phonons
-│   └── scba_solver.py           # Multi-phonon SCBA
-├── run/                 # Executable scripts
-│   ├── run_single_molecule.py   # Single simulation
-│   └── run_batch.py             # Batch screening
-├── analysis/            # Post-processing
-│   └── iets_analysis.py         # Fingerprints & selectivity
-└── quick_test.py        # Pipeline validation
+├── core/
+│   ├── scba_rank1_keldysh.py   # rank-1 Keldysh SCBA driver (Anderson/DIIS mixing)
+│   ├── scba_solver_rank1.py    # rank-1 projected Dyson algebra
+│   ├── iets_analytic.py        # analytic d²I/dV² (stored in npz; NOT used for figs)
+│   └── self_energy.py          # gaussian_chi_projector (used by a test)
+├── config/
+│   ├── device_library.py       # ZnO_MgZnO_symmetric + other stacks
+│   └── molecular_database.py   # Mol_A/B/AB (+ VOC database)
+├── run/
+│   ├── run_rank1_sweep.py      # bias/temperature sweep driver
+│   ├── make_paper_figs.py      # the SISPAD paper figures (fig1_IV … fig5_temp)
+│   ├── verify_reproduction.py  # fast (~25 s) reproduction gate
+│   └── reproduce_sispad.sh     # full from-scratch sweep + figures
+├── tests/                      # 6 production tests + Patil reference data
+├── docs/                       # current method/stack/benchmark docs (see below)
+├── results/sispad_scba_2026-04-14/   # the SISPAD paper results (figs + 51-pt npz)
+├── papers/                     # references, LaTeX sources, poster
+└── archive/                    # legacy code/scripts/old results (gitignored, local only)
 ```
 
-### Physics Flow
+## Device & key numbers (SISPAD `-9`)
 
-```
-Device + Molecule
-    ↓
-Discretize → Build H (Hamiltonian)
-    ↓
-Define Phonon Modes (bulk + molecular)
-    ↓
-Contact Self-Energies (Σ₁, Σ₂)
-    ↓
-SCBA Loop (iterate Σ_S until convergence)
-    ↓
-Compute I(V) → dI/dV → d²I/dV² (IETS)
-    ↓
-Extract Fingerprint → Classification
-```
+- Symmetric ZnO / Mg₀.₃Zn₀.₇O RTD: 2 nm barriers / 3 nm well / 10 nm n⁺ contacts.
+- ΔEc = 0.47 eV, m\* = 0.28 m₀, ℏω_LO ≈ 72 meV, 10 µm × 10 µm pixel.
+- NDR at **V_res ≈ 560 mV**, Baseline peak **≈ 69 nA** (PVR ≈ 6) at 300 K.
+- Analytes: Mol_A (ℏω=100 meV), Mol_B (180 meV), Mol_AB (both), Baseline (bulk LO only).
+- Sweep: 0–800 mV, **51 points (16 mV)**, Anderson/DIIS mixing (M=8, β=0.3),
+  current conservation < 0.2%. d²I/dV² = raw `np.diff(I,2)/dV²` (no smoothing).
 
----
-
-## Materials & Devices
-
-### Oxide Semiconductor Systems
-
-| Material | m*/m₀ | Band Offset | Process T | Status |
-|----------|-------|-------------|-----------|---------|
-| In₂O₃/Al₂O₃ | 0.30 | 2.8 eV | 350°C | PRIMARY ⭐ |
-| IGZO/Al₂O₃ | 0.34 | 2.8 eV | 300°C | Amorphous, uniform |
-| ZnO/Al₂O₃ | 0.28 | 2.8 eV | 350°C | Mature ALD |
-| SnO₂/Al₂O₃ | 0.25 | 2.8 eV | 300°C | Stable backup |
-
-**All BEOL-compatible**: Standard CMOS back-end processing!
-
-### Device Geometries
-
-**Symmetric RTD**: Equal barriers for resonant tunneling  
-**Asymmetric RTD**: Wide emitter barrier for enhanced sensing  
-**Typical structure**: 10/2/2.5/2/10 nm (contact/barrier/well/barrier/contact)
-
----
-
-## Molecular Database
-
-### 21 Odorants (from Pandey 2021)
-
-**6 Perceptual Classes**:
-1. **Aromatic** (3): Benzene, Toluene, Naphthalene
-2. **Roasted Coffee** (5): 2-Methylpyrazine, Furan, ...
-3. **Moth-ball** (2): Camphor, Dichlorobenzene
-4. **Fruity** (4): Ethyl hexanoate, Benzyl acetate, ...
-5. **Musk** (5): Musk ketone, Galaxolide, ...
-6. **Garlicky** (2): Dimethyl sulfide, Allyl mercaptan
-
-**Vibrational Range**: 9.8 - 410.6 meV
-
----
-
-## Expected Performance
-
-### IETS Spectrum: Benzene on In₂O₃/Al₂O₃
-
-```
-d²I/dV² peaks:
-  49.5 meV  → C-C stretch ⭐
-  79.0 meV  → Ring breathing ⭐
-  134.4 meV → C-H bend ⭐
-  184.1 meV → C-H stretch ⭐
-  395.4 meV → Overtone ⭐
-  
-→ 5 molecular fingerprints!
-```
-
-### Selectivity Metrics
-
-**Target**: >90% overall selectivity  
-**Per-class accuracy**: 85-95% (nearest-neighbor classification)  
-**Discriminability**: High even within perceptual classes  
-
----
-
-## Code Statistics
-
-| Component | Lines | Description |
-|-----------|-------|-------------|
-| `molecular_database.py` | 350 | 21 molecules, vibrational data |
-| `device_library.py` | 430 | 12 devices, material properties |
-| `hamiltonian.py` | 380 | Discretization, tight-binding |
-| `green_functions.py` | 330 | NEGF solver |
-| `self_energy.py` | 380 | Contact + phonon self-energies |
-| `scba_solver.py` | 400 | Multi-phonon iteration |
-| `run_single_molecule.py` | 400 | Complete simulation pipeline |
-| `run_batch.py` | 350 | Batch screening |
-| `iets_analysis.py` | 300 | Fingerprints, selectivity |
-| **TOTAL** | **~2600** | **Production code** |
-
----
-
-## Detailed Documentation
-
-Each batch has comprehensive documentation:
-
-- 📘 **[README_BATCH1.md](README_BATCH1.md)**: Configuration modules
-- 📗 **[README_BATCH2.md](README_BATCH2.md)**: Core physics (Hamiltonian, NEGF)
-- 📙 **[README_BATCH3.md](README_BATCH3.md)**: Self-energies & SCBA (THE MAGIC!)
-- 📕 **[README_BATCH4.md](README_BATCH4.md)**: Run scripts & analysis
-
-**Additional**:
-- 📄 **[OXIDE_MATERIALS_GUIDE.md](OXIDE_MATERIALS_GUIDE.md)**: Material parameter sources
-- 📊 **quantum_enose_complete_documentation.tex**: 42-page comprehensive doc
-
----
-
-## Physics Principles
-
-### Why RTDs for IETS?
-
-**Problem**: Traditional MIM-IETS requires cryogenic temperatures  
-**Solution**: RTD quantum well provides energy filtering at 300K
-
-```
-Resonant state acts as selective energy filter:
-  - Electron must match E_resonance to tunnel
-  - Phonon emission opens channel when qV ≈ ℏω
-  - d²I/dV² peak reveals molecular vibration
-```
-
-### Multi-Phonon SCBA
-
-**Self-consistent loop**:
-1. Compute G(E) from current Σ_S
-2. Compute n(E), p(E) correlation functions
-3. Update Σ_S from phonon scattering
-4. Repeat until convergence
-
-**Locality**: Projection operator P ensures molecular modes stay localized!
-
----
-
-## Example: Complete Workflow
-
-```python
-# 1. Setup
-from config.device_library import get_device
-from config.molecular_database import get_molecule
-from run.run_single_molecule import run_iets_simulation, SimulationConfig
-
-# 2. Configure
-config = SimulationConfig()
-config.device_name = "In2O3_Al2O3_symmetric"
-config.molecule_name = "Benzene"
-config.V_points = 26  # 0-0.5V in 0.02V steps
-
-# 3. Run simulation
-results = run_iets_simulation(config)
-
-# 4. Extract results
-V = results['V_array']
-I = results['I_array']
-d2IdV2 = results['d2IdV2']
-
-# 5. Analyze
-from analysis.iets_analysis import extract_iets_fingerprint
-
-fingerprint = extract_iets_fingerprint(V, d2IdV2)
-print(f"Detected {fingerprint['n_peaks']} molecular peaks!")
-
-# 6. Save
-from run.run_single_molecule import save_results
-save_results(results, "my_simulation.csv")
-```
-
----
-
-## Computational Performance
-
-### Single Molecule Simulation
-
-**Default settings** (200 E-points, 26 V-points):
-- **Time**: 2-5 minutes (laptop)
-- **Memory**: ~500 MB
-- **Convergence**: Typically 3-6 SCBA iterations
-
-### Batch Screening
-
-| Task | Molecules | Time | Output Size |
-|------|-----------|------|-------------|
-| Test | 3 | 5-10 min | ~30 KB |
-| Class | 3-5 | 15-30 min | ~50 KB |
-| Full | 21 | 1-2 hrs | ~200 KB |
-
-**Optimization**: Parallelizable (4× speedup with 4 cores)
-
----
-
-## Research Applications
-
-### Immediate Use Cases
-
-1. **Material screening**: Compare In₂O₃ vs IGZO vs ZnO
-2. **Geometry optimization**: Symmetric vs asymmetric RTDs
-3. **Molecular discrimination**: Perceptual class accuracy
-4. **Sensitivity analysis**: Coupling strength effects
-
-
-**Key figures**:
-1. IETS spectra for representative molecules
-2. Selectivity matrix (21×21)
-3. Classification accuracy by class
-4. Material comparison (4 oxide systems)
-
----
-
-## Validation & Testing
-
-### Quick Test Suite
+## Reproduce
 
 ```bash
-python quick_test.py
+source venv/bin/activate
+
+# Fast gate (~25 s): re-run key bias points, check vs golden data
+python run/verify_reproduction.py
+
+# Regenerate the paper figures from the golden npz (seconds)
+python run/make_paper_figs.py
+#   -> results/sispad_scba_2026-04-14/{fig1_IV,fig2_d2IdV2,fig3_deltaI,fig4_deltaD,fig5_temp}
+
+# Full from-scratch sweep + figures (~2 h at 51 pts)
+bash run/reproduce_sispad.sh
 ```
 
-**Tests**:
-1. Configuration loading ✓
-2. Core physics (H, G, A) ✓
-3. SCBA convergence ✓
-4. Run scripts ✓
-5. Analysis tools ✓
+Full recipe, parameters, data locations, and the Overleaf figure-name mapping:
+**`docs/REPRODUCE_SISPAD.md`**.
 
-**Runtime**: ~60 seconds  
-**All tests must pass** before production runs!
+## Documentation
 
----
+- `docs/REPRODUCE_SISPAD.md` — authoritative reproduction recipe (start here).
+- `docs/METHOD_DERIVATION.md` — rank-1 projected SCBA derivation + parity theorem.
+- `docs/STACK_DECISION.md` — why ZnO/Mg₀.₃Zn₀.₇O (vs In₂O₃/κ-Ga₂O₃).
+- `docs/PATIL_BENCHMARK.md`, `docs/PATIL_OCTAVE_REFERENCE.md` — 1D GaAs benchmark
+  (validated by `tests/test_patil_reference.py`, `tests/test_patil_octave_match.py`).
+- `rules.md` — code conventions.
 
-## Troubleshooting
+Legacy framework docs and the pre-submission draft/checklist live under
+`archive/docs/`; the older multimode/hybrid solver and exploratory scripts are
+under `archive/` (kept locally, not versioned).
 
-### Common Issues
+## Tests
 
-**SCBA doesn't converge**:
-- Reduce mixing parameter (`scba_mixing = 0.2`)
-- Increase tolerance (`scba_tolerance = 5e-4`)
-- Check phonon energies (must be << 1 eV)
+```bash
+python -m pytest tests/ -q
+```
+47 pass. Four `tests/test_rank1_keldysh.py` cases (the Patil 1D benchmark γ/δ
+tightening items) are known-failing and unrelated to the ZnO production results —
+see `docs/REPRODUCE_SISPAD.md`.
 
-**Low selectivity**:
-- Increase molecular coupling
-- Try asymmetric device (wider emitter barrier)
-- Use finer energy grid
+## References
 
-**Unexpected peaks**:
-- Check for bulk phonon contamination
-- Verify projection operator locality
-- Inspect individual bias point convergence
+- Patil, Saha, Ganguly, *Sci. Rep.* 8:128 (2018) — RTD-IETS concept.
+- Pandey et al., *Sci. Rep.* 11:11389 (2021) — biomimetic e-nose / VOC modes.
+- Datta, *Quantum Transport: Atom to Transistor*, Cambridge — NEGF.
 
----
-
-## Future Development
-
-### Near-term Enhancements
-
-- [ ] Parallel batch processing (multiprocessing)
-- [ ] Adaptive energy grid (dense near features)
-- [ ] Real-time progress visualization
-- [ ] Automated figure generation
-
-### Long-term Research
-
-- [ ] GPU acceleration (CuPy/JAX)
-- [ ] Machine learning classification
-- [ ] Experimental validation (collaboration)
-- [ ] Extended molecule database (>100 odorants)
-
----
-
-## Citation
-
-
-**References**:
-- Patil et al., Sci. Rep. 8:128 (2018) - RTD-IETS concept
-- Pandey et al., Sci. Rep. 11:13465 (2021) - Molecular database
-- Datta, Superlattices & Microstructures 28:253 (2000) - NEGF tutorial
-
----
-
-## License
-
-
----
-
-## Contact
-
-**Project**: Quantum biomimetic electronic nose  
-**Institution**: IIT Bombay, Dept. of Electrical Engineering  
-
---
+IIT Bombay, Dept. of Electrical Engineering.

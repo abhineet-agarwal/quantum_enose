@@ -1,5 +1,10 @@
 # Patil 1D Octave numerical reference — workflow + status
 
+> **Note (2026-05-27):** the `.mat` reference and its regression test
+> (`tests/patil_octave_reference.mat`, `tests/test_patil_octave_match.py`) are
+> current. Later mentions of `scba_solver_hybrid.py` / `run_iets.py` are
+> historical — both are now under `archive/`.
+
 **Owner:** SISPAD Tier-1 γ
 **Created:** 2026-04-08
 **Status:** **Completed 2026-04-08.** Octave 11.1.0 installed, reference

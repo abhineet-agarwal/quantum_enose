@@ -6,6 +6,13 @@ thread with Nidhi Pandey on "molecule projection + perturbation theory" that
 was not followed through at the time.
 **Date:** 2026-04-07
 
+> **Implementation note (2026-05-27):** the rank-1 solver shipped as a standalone
+> pair, `core/scba_solver_rank1.py` (projected Dyson algebra) +
+> `core/scba_rank1_keldysh.py` (Keldysh SCBA driver), run via
+> `run/run_rank1_sweep.py`. The "`run_iets.py --solver {hybrid,rank1}` flag" and
+> `scba_solver_hybrid.py` integration sketched in §below were **not** taken — those
+> files are now under `archive/`. The derivation itself is unchanged and current.
+
 ---
 
 ## 1. Setup
