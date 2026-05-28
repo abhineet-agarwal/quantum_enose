@@ -35,6 +35,11 @@ from config.device_library import DEVICES, MATERIALS, get_band_offset
 from config.molecular_database import MOLECULES
 from core.iets_analytic import analytic_d2idv2_inelastic_at_bias
 from core.scba_rank1_keldysh import run_rank1_keldysh_single_bias
+from core.poisson_negf import (
+    build_electrostatics,
+    compute_density_prefactor,
+    run_self_consistent_bias,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -209,6 +214,10 @@ def run_sweep(
     scba_max_iter: int = 10,
     scba_mix: float = 0.4,
     scba_tol: float = 1e-5,
+    use_poisson: bool = False,
+    poisson_max_iter: int = 40,
+    poisson_tol: float = 5e-3,
+    poisson_kT_screen: float = 0.002,
     out_dir: str | None = None,
     verbose: bool = True,
 ):
@@ -231,6 +240,22 @@ def run_sweep(
         molecule, dE, kT, chi_mol, NS, ND, UB=UB
     )
 
+    # Poisson electrostatics: per-site permittivity and donor density on the
+    # same grid as H_z, plus the equilibrium-calibrated density prefactor.
+    eps_r = N_D = contact_mask = None
+    density_prefactor = None
+    if use_poisson:
+        eps_r, N_D, contact_mask = build_electrostatics(device, a_m)
+        assert eps_r.size == Np, "electrostatics grid misaligned with H_z grid"
+        density_prefactor = compute_density_prefactor(
+            E_grid=E_grid, H_z=H_z, UB=UB, t0=t0, Ef=Ef, kT=kT,
+            chi_diag=chi_default, D0_sq_per_mode=D0_sq, hnu_idx_per_mode=hnu_idx,
+            N_bose_per_mode=N_bose, chi_per_mode=chi_list, N_D=N_D,
+            contact_mask=contact_mask, NS=NS, ND=ND,
+            scba_max_iter=scba_max_iter, scba_mix=scba_mix, scba_tol=scba_tol,
+            eta=eta,
+        )
+
     if verbose:
         print(f"[setup] device={device}  mol={molecule}  Np={Np}  NE={NE}  "
               f"t0={t0:.3f} eV  a={a_nm} nm")
@@ -239,6 +264,10 @@ def run_sweep(
               f"N_bose={[round(n,3) for n in N_bose]}")
         print(f"[setup] χ centre={z0:.3f} nm  σ_mol={sigma_mol_nm} nm  "
               f"bulk+mol chi profiles: {len(chi_list)}")
+        if use_poisson:
+            print(f"[setup] POISSON ON: density prefactor C={density_prefactor:.3e} "
+                  f"(charge-neutral contacts), max_iter={poisson_max_iter} "
+                  f"tol={poisson_tol*1e3:.2f} meV kT_screen={poisson_kT_screen*1e3:.1f} meV")
 
     V_grid = np.linspace(V_min, V_max, V_points)
     I_L = np.zeros(V_points)
@@ -246,29 +275,54 @@ def run_sweep(
     d2I = np.zeros(V_points)
     iters = np.zeros(V_points, dtype=int)
     converged = np.zeros(V_points, dtype=bool)
+    # Self-consistent profiles (only filled when use_poisson).
+    U_profiles = np.zeros((V_points, Np)) if use_poisson else None
+    n_profiles = np.zeros((V_points, Np)) if use_poisson else None
+    poisson_iters = np.zeros(V_points, dtype=int) if use_poisson else None
+    poisson_converged = np.zeros(V_points, dtype=bool) if use_poisson else None
 
+    U_warm = None  # warm-start the Poisson loop from the previous bias point
     t_start = time.time()
     for i, V in enumerate(V_grid):
-        bp = linear_bias_profile(V, Np, NS, ND)
-        res = run_rank1_keldysh_single_bias(
-            V=float(V),
-            E_grid=E_grid,
-            H_z=H_z,
-            UB=UB,
-            bias_profile=bp,
-            t0=t0,
-            Ef=Ef,
-            kT=kT,
-            chi_diag=chi_default,
-            D0_sq_per_mode=D0_sq,
-            hnu_idx_per_mode=hnu_idx,
-            N_bose_per_mode=N_bose,
-            chi_per_mode=chi_list,
-            max_iter=scba_max_iter,
-            tol=scba_tol,
-            mix=scba_mix,
-            eta=eta,
-        )
+        if use_poisson:
+            sc = run_self_consistent_bias(
+                V=float(V), E_grid=E_grid, H_z=H_z, UB=UB, t0=t0, Ef=Ef, kT=kT,
+                chi_diag=chi_default, D0_sq_per_mode=D0_sq,
+                hnu_idx_per_mode=hnu_idx, N_bose_per_mode=N_bose,
+                chi_per_mode=chi_list, eps_r=eps_r, N_D=N_D, a_m=a_m,
+                density_prefactor=density_prefactor, NS=NS, ND=ND,
+                scba_max_iter=scba_max_iter, scba_mix=scba_mix,
+                scba_tol=scba_tol, eta=eta,
+                poisson_max_iter=poisson_max_iter, poisson_tol=poisson_tol,
+                kT_screen=poisson_kT_screen, U_init=U_warm,
+            )
+            res = sc.result
+            U_warm = sc.U
+            U_profiles[i] = sc.U
+            n_profiles[i] = sc.n_e
+            poisson_iters[i] = sc.poisson_iters
+            poisson_converged[i] = sc.poisson_converged
+        else:
+            bp = linear_bias_profile(V, Np, NS, ND)
+            res = run_rank1_keldysh_single_bias(
+                V=float(V),
+                E_grid=E_grid,
+                H_z=H_z,
+                UB=UB,
+                bias_profile=bp,
+                t0=t0,
+                Ef=Ef,
+                kT=kT,
+                chi_diag=chi_default,
+                D0_sq_per_mode=D0_sq,
+                hnu_idx_per_mode=hnu_idx,
+                N_bose_per_mode=N_bose,
+                chi_per_mode=chi_list,
+                max_iter=scba_max_iter,
+                tol=scba_tol,
+                mix=scba_mix,
+                eta=eta,
+            )
         I_L[i] = res.I_left
         I_R[i] = res.I_right
         d2I[i] = analytic_d2idv2_inelastic_at_bias(res, kT=kT, E_F=Ef)
@@ -277,8 +331,10 @@ def run_sweep(
         if verbose and (i % 10 == 0 or i == V_points - 1):
             elapsed = time.time() - t_start
             eta_s = elapsed / max(1, i + 1) * (V_points - i - 1)
+            pstr = (f"  pois={poisson_iters[i]}({'✓' if poisson_converged[i] else '~'})"
+                    if use_poisson else "")
             print(f"  [{i+1:3d}/{V_points}]  V={V:.3f}  I_R={res.I_right:+.3e} A  "
-                  f"d2I={d2I[i]:+.3e}  iters={res.iters_used}  "
+                  f"d2I={d2I[i]:+.3e}  iters={res.iters_used}{pstr}  "
                   f"elapsed={elapsed:6.1f}s  eta={eta_s:6.1f}s",
                   flush=True)
 
@@ -304,8 +360,7 @@ def run_sweep(
         f"{int(T_K)}K_rank1scba_{date}.npz"
     )
     out_path = os.path.join(out_dir, fname)
-    np.savez_compressed(
-        out_path,
+    save_kw = dict(
         V=V_grid, I_L=I_L, I_R=I_R, d2I=d2I,
         iters=iters, converged=converged,
         E_grid=E_grid, z_nm=z_nm, UB=UB, chi_used=chi_default,
@@ -316,7 +371,17 @@ def run_sweep(
         A_trans_m2=A_trans_m2,
         scba_max_iter=scba_max_iter, scba_mix=scba_mix, scba_tol=scba_tol,
         eta=eta, sigma_mol_nm=sigma_mol_nm,
+        use_poisson=use_poisson,
     )
+    if use_poisson:
+        save_kw.update(
+            U_profiles=U_profiles, n_profiles=n_profiles, N_D=N_D, eps_r=eps_r,
+            density_prefactor=density_prefactor,
+            poisson_iters=poisson_iters, poisson_converged=poisson_converged,
+            poisson_max_iter=poisson_max_iter, poisson_tol=poisson_tol,
+            poisson_kT_screen=poisson_kT_screen,
+        )
+    np.savez_compressed(out_path, **save_kw)
     if verbose:
         conserv = np.abs(I_L + I_R) / np.maximum(np.abs(I_R), 1e-30)
         print(f"[done] wrote {out_path}")
@@ -339,6 +404,17 @@ def main():
     ap.add_argument("--scba-mix", type=float, default=0.4)
     ap.add_argument("--scba-tol", type=float, default=1e-5)
     ap.add_argument("--T", type=float, default=300.0, help="Temperature in K")
+    ap.add_argument("--poisson", action="store_true",
+                    help="Enable self-consistent Poisson–NEGF (default OFF; "
+                         "the SISPAD reproduction path uses a fixed linear drop)")
+    ap.add_argument("--poisson-max-iter", type=int, default=40)
+    ap.add_argument("--poisson-tol", type=float, default=5e-3,
+                    help="Poisson convergence tol on the predictor-step residual "
+                         "(eV); 5 meV ≪ kT is the inner-SCBA-limited floor")
+    ap.add_argument("--poisson-kt-screen", type=float, default=0.002,
+                    help="Screening temperature (eV) for the Thomas–Fermi "
+                         "predictor fallback; small over-damps for stability "
+                         "(default 2 meV)")
     ap.add_argument("--out-dir", default=None)
     args = ap.parse_args()
 
@@ -351,7 +427,11 @@ def main():
             dE=args.dE,
             T_K=args.T,
             scba_max_iter=args.scba_max_iter, scba_mix=args.scba_mix,
-            scba_tol=args.scba_tol, out_dir=args.out_dir,
+            scba_tol=args.scba_tol,
+            use_poisson=args.poisson, poisson_max_iter=args.poisson_max_iter,
+            poisson_tol=args.poisson_tol,
+            poisson_kT_screen=args.poisson_kt_screen,
+            out_dir=args.out_dir,
         )
 
 
