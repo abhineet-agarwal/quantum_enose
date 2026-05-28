@@ -117,6 +117,57 @@ def linear_bias_profile(V: float, Np: int, NS: int = 1, ND: int = 1) -> np.ndarr
     ])
 
 
+def contact_dirichlet(contact_mask: np.ndarray, V: float):
+    """Charge-neutral reservoir BC: hold the doped contacts at the bias rails.
+
+    The n⁺ doped contacts are low-resistance reservoirs that stay essentially
+    charge-neutral and flat-band, so the whole emitter block is clamped to
+    ``+V/2`` and the whole collector block to ``−V/2``; Poisson is then solved
+    only on the active (undoped barriers+well) region, where the space charge
+    actually lives. Without this the contacts develop spurious ~1 eV band
+    bending at finite bias (the NEGF contact occupation drifts from N_D).
+
+    Returns ``(mask, vals)`` for the Newton-step ``dirichlet_*`` arguments.
+    """
+    Np = contact_mask.size
+    vals = np.zeros(Np)
+    idx = np.where(contact_mask)[0]
+    if idx.size == 0:
+        return contact_mask.copy(), vals
+    # Emitter block: contiguous run from the first contact site.
+    p = idx[0]
+    emitter = []
+    for k in idx:
+        if k == p:
+            emitter.append(k)
+            p += 1
+        else:
+            break
+    # Collector block: contiguous run back from the last contact site.
+    p = idx[-1]
+    collector = []
+    for k in idx[::-1]:
+        if k == p:
+            collector.append(k)
+            p -= 1
+        else:
+            break
+    vals[np.asarray(emitter)] = +V / 2.0
+    vals[np.asarray(collector)] = -V / 2.0
+    return contact_mask.copy(), vals
+
+
+def flat_contact_profile(V: float, contact_mask: np.ndarray,
+                         dirichlet_vals: np.ndarray) -> np.ndarray:
+    """Initial U: contacts flat at ±V/2, linear ramp across the active region."""
+    U = dirichlet_vals.copy()
+    active = ~contact_mask
+    if active.any():
+        ai = np.where(active)[0]
+        U[active] = np.linspace(+V / 2.0, -V / 2.0, ai.size + 2)[1:-1]
+    return U
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Density prefactor (equilibrium calibration)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -194,6 +245,7 @@ def run_self_consistent_bias(
     N_D: np.ndarray,
     a_m: float,
     density_prefactor: float,
+    contact_mask: np.ndarray | None = None,
     NS: int = 1,
     ND: int = 1,
     scba_max_iter: int = 10,
@@ -245,8 +297,25 @@ def run_self_consistent_bias(
     dE = float(E_grid[1] - E_grid[0])
     U_L, U_R = +V / 2.0, -V / 2.0
 
-    U = linear_bias_profile(V, Np, NS, ND) if U_init is None else U_init.copy()
-    U[0], U[-1] = U_L, U_R  # enforce BC on the warm start
+    # Charge-neutral contact reservoir BC: when contact_mask is given, clamp the
+    # whole doped-contact region to ±V/2 and solve Poisson only on the active
+    # (undoped) region. Without it the contacts develop spurious ~1 eV bending.
+    if contact_mask is not None:
+        d_mask, d_vals = contact_dirichlet(contact_mask, V)
+    else:
+        d_mask = d_vals = None
+
+    if U_init is not None:
+        U = U_init.copy()
+    elif contact_mask is not None:
+        U = flat_contact_profile(V, contact_mask, d_vals)
+    else:
+        U = linear_bias_profile(V, Np, NS, ND)
+    # Enforce the boundary condition on the (possibly warm-started) profile.
+    if d_mask is not None:
+        U[d_mask] = d_vals[d_mask]
+    else:
+        U[0], U[-1] = U_L, U_R
 
     def negf_and_density(U_profile):
         r = run_rank1_keldysh_single_bias(
@@ -278,13 +347,17 @@ def run_self_consistent_bias(
             # Over-damped Thomas–Fermi predictor (dn/dU ≈ −n/kT_screen makes the
             # Jacobian negative-definite → a guaranteed, if slow, descent).
             U_new = poisson_newton_update(U, eps_r, N_D, n_e, a_m,
-                                          U_L, U_R, kT_screen)
+                                          U_L, U_R, kT_screen,
+                                          dirichlet_mask=d_mask,
+                                          dirichlet_vals=d_vals)
         else:
             # Full Newton-Raphson with the exact quantum response Jacobian.
             J = density_response_jacobian(res.G_R, res.G_lesser, dE,
                                           density_prefactor)
             U_new = poisson_newton_full_step(U, eps_r, N_D, n_e, J, a_m,
-                                             U_L, U_R, max_step=newton_max_step)
+                                             U_L, U_R, max_step=newton_max_step,
+                                             dirichlet_mask=d_mask,
+                                             dirichlet_vals=d_vals)
         dU = float(np.max(np.abs(U_new - U)))
         U = U_new
         if verbose:

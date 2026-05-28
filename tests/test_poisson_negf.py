@@ -82,7 +82,8 @@ def test_equilibrium_self_consistent_is_neutral_and_flat(coarse_setup):
         Ef=s["Ef"], kT=s["kT"], chi_diag=s["chi_def"], D0_sq_per_mode=s["D0_sq"],
         hnu_idx_per_mode=s["hnu_idx"], N_bose_per_mode=s["N_bose"],
         chi_per_mode=s["chi_list"], eps_r=s["eps_r"], N_D=s["N_D"],
-        a_m=s["a_m"], density_prefactor=C, scba_max_iter=20, scba_mix=0.3,
+        a_m=s["a_m"], density_prefactor=C, contact_mask=s["cmask"],
+        scba_max_iter=20, scba_mix=0.3,
         scba_tol=1e-4, poisson_max_iter=20, poisson_tol=1e-3)
 
     # Boundary conditions held (V=0 → both ends grounded).
@@ -97,3 +98,31 @@ def test_equilibrium_self_consistent_is_neutral_and_flat(coarse_setup):
     n_contact = float(np.mean(sc.n_e[deep]))
     N_D_contact = float(np.mean(s["N_D"][deep]))
     assert n_contact == pytest.approx(N_D_contact, rel=0.5)
+
+
+def test_finite_bias_contacts_clamped_no_spurious_bending(coarse_setup):
+    """Charge-neutral reservoir BC: at finite bias the doped contacts stay
+    clamped at ±V/2 (flat band) — guards the ~1 eV spurious-bending regression."""
+    from core.poisson_negf import contact_dirichlet
+    s = coarse_setup
+    C = compute_density_prefactor(
+        E_grid=s["E_grid"], H_z=s["H_z"], UB=s["UB"], t0=s["t0"], Ef=s["Ef"],
+        kT=s["kT"], chi_diag=s["chi_def"], D0_sq_per_mode=s["D0_sq"],
+        hnu_idx_per_mode=s["hnu_idx"], N_bose_per_mode=s["N_bose"],
+        chi_per_mode=s["chi_list"], N_D=s["N_D"], contact_mask=s["cmask"],
+        scba_max_iter=20, scba_mix=0.3, scba_tol=1e-4)
+    V = 0.4
+    sc = run_self_consistent_bias(
+        V=V, E_grid=s["E_grid"], H_z=s["H_z"], UB=s["UB"], t0=s["t0"],
+        Ef=s["Ef"], kT=s["kT"], chi_diag=s["chi_def"], D0_sq_per_mode=s["D0_sq"],
+        hnu_idx_per_mode=s["hnu_idx"], N_bose_per_mode=s["N_bose"],
+        chi_per_mode=s["chi_list"], eps_r=s["eps_r"], N_D=s["N_D"],
+        a_m=s["a_m"], density_prefactor=C, contact_mask=s["cmask"],
+        scba_max_iter=20, scba_mix=0.3, scba_tol=1e-4,
+        poisson_max_iter=8, poisson_tol=5e-3)
+    d_mask, d_vals = contact_dirichlet(s["cmask"], V)
+    # Contacts held exactly at the rails (emitter +V/2, collector -V/2).
+    assert np.allclose(sc.U[d_mask], d_vals[d_mask], atol=1e-9)
+    # No ~1 eV runaway: the whole profile sits within the bias window + a modest
+    # self-consistent overshoot in the active region.
+    assert np.abs(sc.U).max() < V / 2 + 0.15

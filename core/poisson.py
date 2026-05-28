@@ -99,6 +99,24 @@ def solve_poisson_1d(
     return np.linalg.solve(A, b)
 
 
+def _dirichlet_setup(Np, U_left, U_right, dirichlet_mask, dirichlet_vals):
+    """Resolve which sites are held Dirichlet and at what value.
+
+    Default (mask None): only the two endpoints, at ``U_left``/``U_right``.
+    With a mask (e.g. the charge-neutral doped-contact region), every masked
+    site is held at the corresponding ``dirichlet_vals`` entry and Poisson is
+    solved only on the unmasked (active) interior.
+    """
+    if dirichlet_mask is None:
+        fixed = np.zeros(Np, dtype=bool)
+        fixed[0] = fixed[-1] = True
+        fvals = np.zeros(Np)
+        fvals[0] = U_left
+        fvals[-1] = U_right
+        return fixed, fvals
+    return np.asarray(dirichlet_mask, dtype=bool), np.asarray(dirichlet_vals, dtype=float)
+
+
 def poisson_newton_update(
     U_old: np.ndarray,
     eps_r: np.ndarray,
@@ -108,6 +126,8 @@ def poisson_newton_update(
     U_left: float,
     U_right: float,
     kT_screen: float,
+    dirichlet_mask: np.ndarray | None = None,
+    dirichlet_vals: np.ndarray | None = None,
 ) -> np.ndarray:
     """One predictor–corrector (quasi-Newton) Poisson step.
 
@@ -159,16 +179,14 @@ def poisson_newton_update(
     inv_a2 = 1.0 / (a_m * a_m)
     rho = _Q * (N_D - n_e)           # C/m³
     dn_dU = -n_e / kT_screen         # m⁻³ / V  (≤ 0)
+    fixed, fvals = _dirichlet_setup(Np, U_left, U_right, dirichlet_mask, dirichlet_vals)
 
     J = np.zeros((Np, Np))
     F = np.zeros(Np)
     for i in range(Np):
-        if i == 0:
+        if fixed[i]:
             J[i, i] = 1.0
-            F[i] = U_old[i] - U_left
-        elif i == Np - 1:
-            J[i, i] = 1.0
-            F[i] = U_old[i] - U_right
+            F[i] = U_old[i] - fvals[i]
         else:
             eps_L = 0.5 * (eps[i - 1] + eps[i])
             eps_R = 0.5 * (eps[i] + eps[i + 1])
@@ -240,6 +258,8 @@ def poisson_newton_full_step(
     U_left: float,
     U_right: float,
     max_step: float | None = None,
+    dirichlet_mask: np.ndarray | None = None,
+    dirichlet_vals: np.ndarray | None = None,
 ) -> np.ndarray:
     """One full Newton-Raphson step for coupled Poisson–NEGF.
 
@@ -249,8 +269,13 @@ def poisson_newton_full_step(
         J   = L + q · ∂n/∂U                                   (interior rows)
 
     where ``L = d/dz[ε d/dz]`` is the discrete Poisson operator and ``∂n/∂U`` is
-    :func:`density_response_jacobian`. Dirichlet rows (contacts) are the identity
-    with ``δU = 0``. Near a fixed point this converges quadratically.
+    :func:`density_response_jacobian`. Dirichlet rows are the identity with
+    ``δU = 0``. Near a fixed point this converges quadratically.
+
+    With ``dirichlet_mask`` the whole doped-contact region is held Dirichlet at
+    ``dirichlet_vals`` (charge-neutral reservoir BC) and Poisson is solved only
+    on the active barriers+well region — otherwise the contacts develop spurious
+    (~1 eV) band bending at finite bias. Default (None) fixes only the endpoints.
 
     ``max_step`` optionally damps the Newton step (trust-region style): if
     ``max|δU| > max_step`` the step is scaled down. This guards against
@@ -266,16 +291,14 @@ def poisson_newton_full_step(
     eps = eps_r * _EPS0
     inv_a2 = 1.0 / (a_m * a_m)
     rho = _Q * (N_D - n_e)
+    fixed, fvals = _dirichlet_setup(Np, U_left, U_right, dirichlet_mask, dirichlet_vals)
 
     J = np.zeros((Np, Np))
     F = np.zeros(Np)
     for i in range(Np):
-        if i == 0:
+        if fixed[i]:
             J[i, i] = 1.0
-            F[i] = U_old[i] - U_left
-        elif i == Np - 1:
-            J[i, i] = 1.0
-            F[i] = U_old[i] - U_right
+            F[i] = U_old[i] - fvals[i]
         else:
             eps_L = 0.5 * (eps[i - 1] + eps[i])
             eps_R = 0.5 * (eps[i] + eps[i + 1])
