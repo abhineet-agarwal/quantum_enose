@@ -25,9 +25,10 @@ import numpy as np
 from config.device_library import DEVICES, MATERIALS
 from core.poisson import (
     calibrate_density_prefactor,
-    density_response_jacobian,
     extract_density_1d,
-    poisson_newton_full_step,
+    fermi_dirac_half,
+    fermi_dirac_minus_half,
+    physical_transverse_density,
     poisson_newton_update,
 )
 from core.scba_rank1_keldysh import (
@@ -117,17 +118,97 @@ def linear_bias_profile(V: float, Np: int, NS: int = 1, ND: int = 1) -> np.ndarr
     ])
 
 
+def terminal_masks(contact_mask: np.ndarray,
+                   quantum_buffer_sites: int = 15):
+    """Split the doped contacts into (deep flat-band emitter | collector)
+    terminals and the inner quantum-buffer region (Akkala thesis Fig 3.1/3.3).
+
+    Returns ``(em_term, col_term)``: boolean masks marking the *deep* part of
+    each contact (outer ``block_size − quantum_buffer_sites`` sites) where
+    semiclassical **Thomas-Fermi / Boltzmann charge** is used — providing the
+    Thomas-Fermi screening that pins the contact at flat band while the inner
+    ``quantum_buffer_sites`` (≈3 nm) hosts the quantum NEGF charge so the
+    **emitter accumulation / triangular-well quasi-bound state** can form.
+    """
+    cm = np.asarray(contact_mask, dtype=bool)
+    Np = cm.size
+    em_term = np.zeros(Np, dtype=bool)
+    col_term = np.zeros(Np, dtype=bool)
+    idx = np.where(cm)[0]
+    if idx.size == 0:
+        return em_term, col_term
+    # Emitter block: contiguous run from idx[0]
+    p = idx[0]; em = []
+    for k in idx:
+        if k == p: em.append(k); p += 1
+        else: break
+    # Collector block: contiguous run back from idx[-1]
+    p = idx[-1]; col = []
+    for k in idx[::-1]:
+        if k == p: col.append(k); p -= 1
+        else: break
+    em = np.asarray(em); col = np.asarray(sorted(col))
+    if em.size > quantum_buffer_sites:
+        em_term[em[:-quantum_buffer_sites]] = True
+    if col.size > quantum_buffer_sites:
+        col_term[col[quantum_buffer_sites:]] = True
+    return em_term, col_term
+
+
+def flat_band_terminal_mask(contact_mask: np.ndarray,
+                            quantum_buffer_sites: int = 15) -> np.ndarray:
+    """Combined deep flat-band terminal mask (emitter ∪ collector).
+
+    See :func:`terminal_masks` for the partition into individual sides.
+    """
+    em, col = terminal_masks(contact_mask, quantum_buffer_sites)
+    return em | col
+
+
+def outer_clamp_masks(contact_mask: np.ndarray, n_clamp_sites: int):
+    """Outermost ``n_clamp_sites`` of each doped contact, for Dirichlet clamping.
+
+    A pragmatic complement to the FD/F_{1/2} terminal screening for *short*
+    contacts (like the 10 nm ZnO in the SISPAD stack), where natural screening
+    alone can't fully pin the deep contact at the rail at high bias. Clamping
+    the outermost N sites of each contact at ±V/2 (Dirichlet) extends the
+    "true reservoir" depth, leaving the middle of the contact for F_{1/2}
+    screening and the inner quantum-buffer for the NEGF accumulation layer.
+    """
+    cm = np.asarray(contact_mask, dtype=bool)
+    Np = cm.size
+    em_clamp = np.zeros(Np, dtype=bool)
+    col_clamp = np.zeros(Np, dtype=bool)
+    if n_clamp_sites <= 0:
+        return em_clamp, col_clamp
+    idx = np.where(cm)[0]
+    if idx.size == 0:
+        return em_clamp, col_clamp
+    p = idx[0]; em = []
+    for k in idx:
+        if k == p: em.append(k); p += 1
+        else: break
+    p = idx[-1]; col = []
+    for k in idx[::-1]:
+        if k == p: col.append(k); p -= 1
+        else: break
+    em = np.asarray(em); col = np.asarray(sorted(col))
+    n = min(n_clamp_sites, em.size)
+    em_clamp[em[:n]] = True
+    n = min(n_clamp_sites, col.size)
+    col_clamp[col[-n:]] = True
+    return em_clamp, col_clamp
+
+
 def contact_dirichlet(contact_mask: np.ndarray, V: float):
-    """Charge-neutral reservoir BC: hold the doped contacts at the bias rails.
+    """[Legacy] Whole-contact flat clamp at ±V/2.
 
-    The n⁺ doped contacts are low-resistance reservoirs that stay essentially
-    charge-neutral and flat-band, so the whole emitter block is clamped to
-    ``+V/2`` and the whole collector block to ``−V/2``; Poisson is then solved
-    only on the active (undoped barriers+well) region, where the space charge
-    actually lives. Without this the contacts develop spurious ~1 eV band
-    bending at finite bias (the NEGF contact occupation drifts from N_D).
-
-    Returns ``(mask, vals)`` for the Newton-step ``dirichlet_*`` arguments.
+    .. deprecated:: superseded by :func:`flat_band_terminal_mask` + ρ=0
+        neutralization in the deep terminals. The whole-contact flat clamp
+        suppressed the emitter accumulation layer and gave the wrong sign for
+        the peak-current change vs the fixed-bias baseline (Akkala thesis
+        Fig 3.8: Hartree peak should be *higher* than the no-charge baseline).
+        Kept for the tests that exercised this earlier path.
     """
     Np = contact_mask.size
     vals = np.zeros(Np)
@@ -255,39 +336,42 @@ def run_self_consistent_bias(
     poisson_max_iter: int = 40,
     poisson_tol: float = 5e-3,
     kT_screen: float = 0.002,
-    newton_max_step: float = 0.05,
-    newton_stall_patience: int = 3,
+    outer_clamp_sites: int = 15,
+    bc_scheme: str = "clamp",
+    density_mode: str = "calibrated",
+    m_eff_kg: float | None = None,
     U_init: np.ndarray | None = None,
     verbose: bool = False,
 ) -> SelfConsistentResult:
-    """Self-consistent Poisson–NEGF loop at a single applied bias ``V``.
+    """Self-consistent Poisson–NEGF loop at a single applied bias ``V``
+    (Gummel–Hartree, following Akkala 2011 thesis Eq 3.50–3.53).
 
-    The Dirichlet boundary values are ``U[0] = +V/2``, ``U[-1] = −V/2`` so the
-    applied bias is carried by Poisson; the interior potential redistributes
-    self-consistently with the NEGF charge. Convergence is measured by the
-    magnitude of the **actual potential update** ``max|U_new − U|`` per
-    iteration: in Newton mode this is the true Newton step (well-scaled by the
-    exact Jacobian; → 0 only at self-consistency, so it does not short-circuit
-    before the well potential forms), in predictor mode the over-damped step.
+    Dirichlet BC at the two outer ends only: ``U[0] = +V/2``, ``U[Np-1] = −V/2``.
+    Each iteration takes a **semiclassical Thomas–Fermi Newton-Raphson Poisson
+    step** with the **NEGF quantum charge** as the source. The Jacobian uses
+    ``dn/dU ≈ −n/kT_screen`` (Eq 3.53 in the Boltzmann limit) — well-conditioned
+    (negative-definite → strictly stable descent) and the textbook standard for
+    NEGF–Poisson RTD self-consistency.
 
-    **Hybrid Newton/predictor stepping.** Each iteration takes a **full
-    Newton-Raphson** step using the exact quantum density-response Jacobian
-    ``∂n/∂U`` (:func:`core.poisson.density_response_jacobian`) — quadratically
-    convergent and the standard method (off resonance, V=0 converges in ~2
-    steps). But near an RTD resonance ``∂n/∂U`` is sign-indefinite (raising the
-    potential can shift a resonance *into* the window, *increasing* density), so
-    the Newton Jacobian is indefinite and the damped step can stall. When Newton
-    fails to reduce the residual for ``newton_stall_patience`` iterations, the
-    loop falls back to the **over-damped Thomas–Fermi predictor**
-    (:func:`core.poisson.poisson_newton_update` with ``dn/dU ≈ −n/kT_screen``),
-    whose Jacobian is always negative-definite — a guaranteed (if slow) descent
-    that grinds the hard resonance points down to the inner-SCBA noise floor.
-    This is Levenberg–Marquardt's logic (Newton ↔ gradient descent) as a clean
-    method switch.
+    **Charge model (thesis Fig 3.1/3.3, set by** ``contact_mask`` **).** Each
+    doped contact splits into three zones along its 10 nm depth:
 
-    ``newton_max_step`` trust-region-caps the Newton step (eV); ``kT_screen``
-    (default 2 meV) sets the predictor damping. ``U_init`` (e.g. the converged U
-    from the previous bias) gives a warm start; if None the linear drop is used.
+    1. **Outer Dirichlet clamp** (outermost ``outer_clamp_sites``) — held at
+       ±V/2 to extend the "true reservoir" depth, which is necessary for the
+       short SISPAD ZnO contact where natural F_{1/2} screening over 10 nm
+       can't fully pin the deep contact at high bias.
+    2. **F_{1/2} screening zone** (middle of the contact) — semiclassical
+       Fermi-Dirac charge ``n = Nc_FD · F_{1/2}((E_F±V/2 − U)/kT)`` (thesis
+       Eq 3.1), calibrated so ``n=N_D`` at the rail. Provides Thomas-Fermi
+       screening that smooths the transition into the active region.
+    3. **Inner quantum buffer** (innermost ``quantum_buffer_sites``, ≈3 nm
+       next to each barrier) — NEGF quantum charge, where the **emitter
+       accumulation / triangular-quasi-bound state** forms. That accumulation
+       is what raises the resonant peak (Akkala Fig 3.8).
+
+    Convergence: magnitude of the actual update ``max|U_new − U|``;
+    ``kT_screen`` (default 2 meV) damps the predictor; ``U_init`` warm-starts
+    from the previous bias (else a linear drop).
 
     Returns
     -------
@@ -297,25 +381,71 @@ def run_self_consistent_bias(
     dE = float(E_grid[1] - E_grid[0])
     U_L, U_R = +V / 2.0, -V / 2.0
 
-    # Charge-neutral contact reservoir BC: when contact_mask is given, clamp the
-    # whole doped-contact region to ±V/2 and solve Poisson only on the active
-    # (undoped) region. Without it the contacts develop spurious ~1 eV bending.
+    # Thesis (Akkala 2011) Gummel–Hartree charge model: Poisson over the WHOLE
+    # domain with Dirichlet only at the two outer ends. The doped contacts split
+    # into a deep **flat-band terminal** part (semiclassical Boltzmann/TF charge
+    # n_TF=Nc·exp((E_F±V/2 − U)/kT), calibrated so n_TF=N_D at the rail) and an
+    # inner **quantum-buffer** part nearest the barrier (NEGF charge, where the
+    # emitter accumulation / triangular-well quasi-bound state forms). The TF
+    # charge responds to U via Boltzmann → Thomas-Fermi screening pins the deep
+    # contact at flat-band; this is the *correct* terminal treatment (the earlier
+    # ρ=0 simplification removed the screening response and let bias drop freely
+    # in the contacts; the flat-clamp before that killed accumulation entirely).
+    if bc_scheme not in ("clamp", "neumann"):
+        raise ValueError("bc_scheme must be 'clamp' or 'neumann'")
+    # PI scheme (bc_scheme='neumann'): replace the pragmatic outer Dirichlet clamp
+    # with a physical zero-field Neumann condition at the collector edge. Justified
+    # because the field screens to zero over the sub-nm Thomas–Fermi length of the
+    # degenerate n+ contact, so it has already vanished at the outer boundary. The
+    # emitter endpoint stays Dirichlet at +V/2 as the gauge/bias reference; the
+    # collector level is then free and *emerges* at ≈−V/2 from charge neutrality —
+    # an internal validation that bias-carrying and neutrality are consistent.
+    right_bc = "neumann" if bc_scheme == "neumann" else "dirichlet"
+
+    em_term = col_term = None
+    em_fd = col_fd = None
+    d_mask = d_vals = None
+    Nc_FD = 0.0
     if contact_mask is not None:
-        d_mask, d_vals = contact_dirichlet(contact_mask, V)
-    else:
-        d_mask = d_vals = None
+        em_term, col_term = terminal_masks(contact_mask)
+        # Outer Dirichlet clamp on each contact (clamp scheme only): extends the
+        # "true reservoir" depth; the middle of the contact keeps F_{1/2}
+        # screening; the inner quantum-buffer keeps the NEGF charge for the
+        # accumulation layer. The neumann scheme drops the clamp entirely.
+        if bc_scheme == "clamp":
+            em_clamp, col_clamp = outer_clamp_masks(contact_mask, outer_clamp_sites)
+        else:
+            em_clamp = col_clamp = np.zeros(Np, dtype=bool)
+        em_fd = em_term & ~em_clamp
+        col_fd = col_term & ~col_clamp
+        if em_clamp.any() or col_clamp.any():
+            d_mask = em_clamp | col_clamp
+            d_vals = np.zeros(Np)
+            d_vals[em_clamp] = +V / 2.0
+            d_vals[col_clamp] = -V / 2.0
+        # Nc_FD calibrated so n_TF = Nc_FD · F_{1/2}(Ef/kT) = N_D at the rail.
+        N_D_contact = float(N_D[contact_mask].max())
+        Nc_FD = N_D_contact / float(fermi_dirac_half(Ef / kT))
 
     if U_init is not None:
         U = U_init.copy()
-    elif contact_mask is not None:
-        U = flat_contact_profile(V, contact_mask, d_vals)
     else:
         U = linear_bias_profile(V, Np, NS, ND)
-    # Enforce the boundary condition on the (possibly warm-started) profile.
+    U[0] = U_L
+    # Emitter endpoint is the gauge/bias reference in both schemes. The collector
+    # endpoint is pinned only in the clamp scheme; under Neumann it is a free
+    # (zero-field) node whose value emerges, so seed it but don't hold it.
+    if right_bc == "dirichlet":
+        U[-1] = U_R
+    # Apply outer-clamp Dirichlet values to the warm start as well.
     if d_mask is not None:
         U[d_mask] = d_vals[d_mask]
-    else:
-        U[0], U[-1] = U_L, U_R
+
+    if density_mode not in ("calibrated", "physical"):
+        raise ValueError("density_mode must be 'calibrated' or 'physical'")
+    if density_mode == "physical" and m_eff_kg is None:
+        raise ValueError("density_mode='physical' requires m_eff_kg")
+    mu_L, mu_R = Ef + V / 2.0, Ef - V / 2.0
 
     def negf_and_density(U_profile):
         r = run_rank1_keldysh_single_bias(
@@ -325,59 +455,59 @@ def run_self_consistent_bias(
             chi_per_mode=chi_per_mode, max_iter=scba_max_iter, tol=scba_tol,
             mix=scba_mix, eta=eta,
         )
-        return r, density_prefactor * extract_density_1d(r.G_lesser, dE)
+        if density_mode == "physical":
+            n = physical_transverse_density(
+                r.G_R, r.Gam_L, r.Gam_R, E_grid, mu_L, mu_R, kT, m_eff_kg, a_m)
+        else:
+            n = density_prefactor * extract_density_1d(r.G_lesser, dE)
+        return r, n
 
     res: Rank1KeldyshResult | None = None
     n_e = np.zeros(Np)
     converged = False
     dU = np.inf
-    best_dU = np.inf
-    stall = 0
-    use_predictor = False  # latches once full Newton proves it cannot progress
     it = 0
     for it in range(1, poisson_max_iter + 1):
-        res, n_e = negf_and_density(U)
-        # Take the step for this iteration, then measure it. The convergence
-        # metric is the magnitude of the **actual update** ``max|U_new − U|``.
-        # In Newton mode this is the true Newton step (well-scaled by the exact
-        # Jacobian, → 0 only at self-consistency) — so it does NOT short-circuit
-        # before the well potential forms. In predictor-fallback mode it is the
-        # over-damped step, which floors at the hard resonance points (accepted).
-        if use_predictor:
-            # Over-damped Thomas–Fermi predictor (dn/dU ≈ −n/kT_screen makes the
-            # Jacobian negative-definite → a guaranteed, if slow, descent).
-            U_new = poisson_newton_update(U, eps_r, N_D, n_e, a_m,
-                                          U_L, U_R, kT_screen,
-                                          dirichlet_mask=d_mask,
-                                          dirichlet_vals=d_vals)
-        else:
-            # Full Newton-Raphson with the exact quantum response Jacobian.
-            J = density_response_jacobian(res.G_R, res.G_lesser, dE,
-                                          density_prefactor)
-            U_new = poisson_newton_full_step(U, eps_r, N_D, n_e, J, a_m,
-                                             U_L, U_R, max_step=newton_max_step,
-                                             dirichlet_mask=d_mask,
-                                             dirichlet_vals=d_vals)
+        res, n_q = negf_and_density(U)
+        # Thesis Eq 3.1 charge model assembled per-site:
+        #   • deep emitter terminal: n_TF = Nc_FD · F_{1/2}((E_F+V/2 − U)/kT)
+        #   • deep collector terminal: n_TF = Nc_FD · F_{1/2}((E_F−V/2 − U)/kT)
+        #   • quantum region (inner contact buffer + barriers + well): NEGF n_q.
+        # Jacobian dn/dU per region:
+        #   • terminals: −Nc_FD · F_{−1/2}(η)/kT (exact Fermi-Dirac derivative)
+        #   • quantum region: −n_q/kT_screen (Boltzmann predictor — Newton's
+        #     approximation; the fixed point is unaffected).
+        n_e = n_q.copy()
+        dn_dU = -n_q / kT_screen
+        if em_fd is not None and em_fd.any():
+            eta_em = (Ef + V / 2.0 - U[em_fd]) / kT
+            f12 = fermi_dirac_half(eta_em)
+            fmh = fermi_dirac_minus_half(eta_em)
+            n_e[em_fd] = Nc_FD * f12
+            dn_dU[em_fd] = -Nc_FD * fmh / kT
+        if col_fd is not None and col_fd.any():
+            eta_col = (Ef - V / 2.0 - U[col_fd]) / kT
+            f12 = fermi_dirac_half(eta_col)
+            fmh = fermi_dirac_minus_half(eta_col)
+            n_e[col_fd] = Nc_FD * f12
+            dn_dU[col_fd] = -Nc_FD * fmh / kT
+        # Thesis Eq 3.50–3.53: Newton-Raphson Poisson step with the assembled
+        # per-site charge and Jacobian; outer Dirichlet clamp on each contact.
+        U_new = poisson_newton_update(
+            U, eps_r, N_D, n_e, a_m, U_L, U_R, kT_screen,
+            dn_dU_override=dn_dU,
+            dirichlet_mask=d_mask, dirichlet_vals=d_vals,
+            right_bc=right_bc,
+        )
         dU = float(np.max(np.abs(U_new - U)))
         U = U_new
         if verbose:
-            mode = "pred " if use_predictor else "newton"
-            print(f"    [poisson {it:2d} {mode}] step={dU*1e3:8.3f} meV  "
+            print(f"    [poisson {it:2d}] step={dU*1e3:8.3f} meV  "
                   f"I_R={res.I_right:+.3e} A  Umin={U.min():+.3f}  "
                   f"n_well_max={n_e.max():.2e} m⁻³", flush=True)
         if dU < poisson_tol:
             converged = True
             break
-
-        # Track progress; if full Newton stalls (step stuck/capped, residual not
-        # shrinking) latch to the always-stable predictor for the rest.
-        if dU < best_dU - 1e-12:
-            best_dU = dU
-            stall = 0
-        else:
-            stall += 1
-        if not use_predictor and stall >= newton_stall_patience:
-            use_predictor = True
 
     # Final consistency solve so the returned observables match the returned U.
     res, n_e = negf_and_density(U)

@@ -38,6 +38,9 @@ from core.scba_rank1_keldysh import run_rank1_keldysh_single_bias
 from core.poisson_negf import (
     build_electrostatics,
     compute_density_prefactor,
+    contact_dirichlet,
+    deep_contact_sites,
+    flat_contact_profile,
     run_self_consistent_bias,
 )
 
@@ -48,6 +51,11 @@ from core.poisson_negf import (
 _HBAR = 1.054571817e-34
 _QE = 1.602176634e-19
 _M0 = 9.10938356e-31
+
+# Extra energy headroom (eV) below the collector band edge (−V_max/2) for the
+# bias-aware Poisson grid floor, so the occupied collector band DOS tail is
+# captured. Calibrated from the E_min-convergence study (see docs/POISSON_*).
+_EMIN_BIAS_MARGIN = 0.20
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -204,7 +212,7 @@ def run_sweep(
     V_max: float = 0.4,
     V_points: int = 201,
     dE: float = 0.002,
-    E_min: float = -0.25,
+    E_min: float | None = None,
     E_max: float = 0.5,
     a_nm: float = 0.2,
     T_K: float = 300.0,
@@ -218,11 +226,30 @@ def run_sweep(
     poisson_max_iter: int = 40,
     poisson_tol: float = 5e-3,
     poisson_kT_screen: float = 0.002,
+    poisson_bc: str = "clamp",
+    density_prefactor_scale: float = 1.0,
+    density_mode: str = "calibrated",
+    flat_band_contacts: bool = False,
     out_dir: str | None = None,
     verbose: bool = True,
 ):
     kT = 0.02585 * (T_K / 300.0)
     a_m = a_nm * 1e-9
+
+    # Energy-grid floor. Under bias the collector band edge sits at −V_max/2, so
+    # the occupied collector band (and the lower edge of the transport window,
+    # μ_R = E_F − V/2) fall below a fixed floor once V_max/2 exceeds |E_min|.
+    # For the self-consistent path that truncates the quantum-region density and
+    # corrupts the band profile (≈5% current error by 0.8 V); the floor is made
+    # bias-aware. The fixed-linear (SISPAD reproduction) current is provably
+    # insensitive to the floor (deep-below-window states carry no transmission),
+    # so that path keeps the historical −0.25 eV grid byte-for-byte.
+    if E_min is None:
+        if use_poisson:
+            E_min = min(-0.25, -(0.5 * V_max + _EMIN_BIAS_MARGIN))
+        else:
+            E_min = -0.25
+
     H_z, UB, t0, Np, z_nm, bounds = build_stack(device, a_m)
 
     # Contact sites = 1 each side, as in Patil's 1D reference.
@@ -244,6 +271,11 @@ def run_sweep(
     # same grid as H_z, plus the equilibrium-calibrated density prefactor.
     eps_r = N_D = contact_mask = None
     density_prefactor = None
+    if flat_band_contacts and not use_poisson:
+        # Fair (space-charge-free) reference for the SC comparison: flat-band
+        # contacts (±V/2 across each doped block) with the bias dropped linearly
+        # across the active region only — i.e. the zeroth Poisson iteration.
+        _, _, contact_mask = build_electrostatics(device, a_m)
     if use_poisson:
         eps_r, N_D, contact_mask = build_electrostatics(device, a_m)
         assert eps_r.size == Np, "electrostatics grid misaligned with H_z grid"
@@ -255,6 +287,35 @@ def run_sweep(
             scba_max_iter=scba_max_iter, scba_mix=scba_mix, scba_tol=scba_tol,
             eta=eta,
         )
+        # Sensitivity knob: scale the equilibrium-calibrated prefactor to probe
+        # how strongly the space-charge feedback depends on the (single-point)
+        # neutrality anchor. 1.0 = the calibrated value (production default).
+        density_prefactor *= density_prefactor_scale
+
+    # Physical (transverse-integrated) density mode: no calibrated prefactor.
+    # Anchor the Poisson donor density to the equilibrium physical density in the
+    # deep contact (charge neutrality without a fit constant); this is the doping
+    # the model's Fermi level actually supports.
+    m_eff_kg = MATERIALS["ZnO"]["m_eff"] * _M0
+    if use_poisson and density_mode == "physical":
+        from core.poisson import physical_transverse_density
+        bp0 = linear_bias_profile(0.0, Np, NS, ND)
+        r0 = run_rank1_keldysh_single_bias(
+            V=0.0, E_grid=E_grid, H_z=H_z, UB=UB, bias_profile=bp0, t0=t0,
+            Ef=Ef, kT=kT, chi_diag=chi_default, D0_sq_per_mode=D0_sq,
+            hnu_idx_per_mode=hnu_idx, N_bose_per_mode=N_bose, chi_per_mode=chi_list,
+            max_iter=scba_max_iter, tol=scba_tol, mix=scba_mix, eta=eta,
+        )
+        n0 = physical_transverse_density(r0.G_R, r0.Gam_L, r0.Gam_R, E_grid,
+                                         Ef, Ef, kT, m_eff_kg, a_m)
+        deep = deep_contact_sites(contact_mask)
+        n_contact_phys = float(np.mean(n0[deep]))
+        N_D_nominal = float(N_D[contact_mask].max())
+        N_D = N_D * (n_contact_phys / N_D_nominal)   # rescale donors → neutral
+        if verbose:
+            print(f"[setup] PHYSICAL density: contact n_eq={n_contact_phys:.3e} "
+                  f"m^-3 → donor density anchored to it (nominal was "
+                  f"{N_D_nominal:.3e}, ratio {n_contact_phys/N_D_nominal:.3f})")
 
     if verbose:
         print(f"[setup] device={device}  mol={molecule}  Np={Np}  NE={NE}  "
@@ -295,7 +356,9 @@ def run_sweep(
                 scba_max_iter=scba_max_iter, scba_mix=scba_mix,
                 scba_tol=scba_tol, eta=eta,
                 poisson_max_iter=poisson_max_iter, poisson_tol=poisson_tol,
-                kT_screen=poisson_kT_screen, U_init=U_warm,
+                kT_screen=poisson_kT_screen, bc_scheme=poisson_bc,
+                density_mode=density_mode, m_eff_kg=m_eff_kg,
+                U_init=U_warm,
             )
             res = sc.result
             U_warm = sc.U
@@ -304,7 +367,11 @@ def run_sweep(
             poisson_iters[i] = sc.poisson_iters
             poisson_converged[i] = sc.poisson_converged
         else:
-            bp = linear_bias_profile(V, Np, NS, ND)
+            if flat_band_contacts:
+                _, dvals = contact_dirichlet(contact_mask, float(V))
+                bp = flat_contact_profile(float(V), contact_mask, dvals)
+            else:
+                bp = linear_bias_profile(V, Np, NS, ND)
             res = run_rank1_keldysh_single_bias(
                 V=float(V),
                 E_grid=E_grid,
@@ -356,9 +423,14 @@ def run_sweep(
         out_dir = os.path.join("results", today)
     os.makedirs(out_dir, exist_ok=True)
     date = _dt.date.today().isoformat()
+    tag = "poisson" if use_poisson else ("flatband" if flat_band_contacts else "rank1scba")
+    if use_poisson and density_mode == "physical":
+        tag += "-physdens"
+    if use_poisson and density_prefactor_scale != 1.0:
+        tag += f"-C{density_prefactor_scale:g}".replace(".", "p")
     fname = (
         f"iets_{device}_{molecule}_{int(V_min*1000)}-{int(V_max*1000)}mV_"
-        f"{int(T_K)}K_rank1scba_{date}.npz"
+        f"{int(T_K)}K_{tag}_{date}.npz"
     )
     out_path = os.path.join(out_dir, fname)
     save_kw = dict(
@@ -380,7 +452,9 @@ def run_sweep(
             density_prefactor=density_prefactor,
             poisson_iters=poisson_iters, poisson_converged=poisson_converged,
             poisson_max_iter=poisson_max_iter, poisson_tol=poisson_tol,
-            poisson_kT_screen=poisson_kT_screen,
+            poisson_kT_screen=poisson_kT_screen, poisson_bc=poisson_bc,
+            density_prefactor_scale=density_prefactor_scale,
+            density_mode=density_mode,
         )
     np.savez_compressed(out_path, **save_kw)
     if verbose:
@@ -416,6 +490,18 @@ def main():
                     help="Screening temperature (eV) for the Thomas–Fermi "
                          "predictor fallback; small over-damps for stability "
                          "(default 2 meV)")
+    ap.add_argument("--poisson-bc", choices=["clamp", "neumann"], default="clamp",
+                    help="Poisson contact BC: 'clamp' (outer Dirichlet clamp, "
+                         "default) or 'neumann' (PI scheme: zero-field collector "
+                         "edge, level emerges from neutrality)")
+    ap.add_argument("--density-prefactor-scale", type=float, default=1.0,
+                    help="Scale the calibrated density prefactor C (sensitivity "
+                         "study; 1.0 = calibrated production value)")
+    ap.add_argument("--density-mode", choices=["calibrated", "physical"],
+                    default="calibrated",
+                    help="'calibrated' = single prefactor C (default); 'physical' "
+                         "= transverse-integrated supply-function density, no fit "
+                         "constant (donors anchored to equilibrium physical density)")
     ap.add_argument("--out-dir", default=None)
     args = ap.parse_args()
 
@@ -432,6 +518,9 @@ def main():
             use_poisson=args.poisson, poisson_max_iter=args.poisson_max_iter,
             poisson_tol=args.poisson_tol,
             poisson_kT_screen=args.poisson_kt_screen,
+            poisson_bc=args.poisson_bc,
+            density_prefactor_scale=args.density_prefactor_scale,
+            density_mode=args.density_mode,
             out_dir=args.out_dir,
         )
 

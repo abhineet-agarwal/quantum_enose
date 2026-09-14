@@ -34,6 +34,123 @@ import numpy as np
 # Physical constants (SI)
 _Q = 1.602176634e-19        # C
 _EPS0 = 8.854187817e-12     # F/m
+_HBAR = 1.054571817e-34     # J·s
+
+
+def physical_transverse_density(
+    G_R: np.ndarray,
+    Gam_L: np.ndarray,
+    Gam_R: np.ndarray,
+    E_grid: np.ndarray,
+    mu_L: float,
+    mu_R: float,
+    kT: float,
+    m_eff_kg: float,
+    a_m: float,
+) -> np.ndarray:
+    """First-principles transverse-integrated electron density (no fit constant).
+
+    Replaces the single calibrated prefactor ``C`` with the physical transverse
+    integration (Lake 1997 / Datta). Transverse motion is a parabolic 2D
+    continuum: each longitudinal energy ``E`` carries a subband, and integrating
+    ``∫d²k⊥/(2π)² = (m*/2πħ²)∫dE⊥`` over the contact filling gives the analytic
+    supply function ``∫dE⊥ f(E+E⊥) = kT·ln(1+e^{(μ−E)/kT})``. Hence
+
+        n(z) = [2 m* kT / (2π ħ² a)] · (1/2π) ∫dE  Σ_{c=L,R}
+                   Re[Gᴿ Γ_c Gᴬ]_zz(E) · ln(1 + e^{(μ_c − E)/kT})
+
+    The leading factor 2 is spin. Energies (``E_grid``, ``mu_*``, ``kT``) are in
+    eV; ``kT`` also appears in SI (× q) in the areal-DOS prefactor.
+
+    Parameters
+    ----------
+    G_R : ndarray (NE, Np, Np) complex   — retarded Green's function
+    Gam_L, Gam_R : ndarray (NE, Np, Np)  — contact broadening functions
+    E_grid : ndarray (NE,)               — uniform energy grid (eV)
+    mu_L, mu_R : float                   — contact electrochemical potentials (eV)
+    kT : float                           — thermal energy (eV)
+    m_eff_kg : float                     — transverse effective mass (kg)
+    a_m : float                          — grid spacing (m)
+
+    Returns
+    -------
+    n : ndarray (Np,)  — electron density (m⁻³)
+    """
+    dE = float(E_grid[1] - E_grid[0])
+    G_A = np.conj(np.transpose(G_R, (0, 2, 1)))
+    dl = np.real(np.diagonal(np.matmul(np.matmul(G_R, Gam_L), G_A), axis1=1, axis2=2))
+    dr = np.real(np.diagonal(np.matmul(np.matmul(G_R, Gam_R), G_A), axis1=1, axis2=2))
+
+    def _supply(mu):
+        x = (mu - E_grid) / kT
+        # stable kT·ln(1+e^x) with kT folded in the prefactor → return ln(1+e^x)
+        return np.where(x > 30.0, x, np.log1p(np.exp(np.clip(x, -600.0, 30.0))))
+
+    integ = np.sum(dl * _supply(mu_L)[:, None] + dr * _supply(mu_R)[:, None],
+                   axis=0) * dE / (2.0 * np.pi)          # (Np,) dimensionless
+    prefac = 2.0 * m_eff_kg * (kT * _Q) / (2.0 * np.pi * _HBAR ** 2 * a_m)  # 1/m³
+    return prefac * integ
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Fermi-Dirac integrals F_{1/2}(η) and F_{−1/2}(η)
+#
+# Convention: ``n = N_c · F_{1/2}((E_F − E_c)/kT)`` with the normalization
+# F_{1/2}(η) → exp(η) in the Boltzmann (non-degenerate) limit η → −∞ and
+# F_{1/2}(η) → (4/(3√π))·η^(3/2) in the deep-degenerate limit η → +∞ — i.e.
+# the thesis (Akkala Eq 3.1) Fermi-Dirac normalization (the factor 2/√π is
+# absorbed into F).
+#
+# Implementation: 64-point Gauss–Laguerre quadrature of the integral
+# F_{1/2}(η) = (2/√π) ∫_0^∞ √u · e^u / (1+e^(u−η)) · e^(−u) du,
+# with Boltzmann series for η < −10 and the leading asymptotic expansion for
+# η > 30. F_{−1/2}(η) ≡ dF_{1/2}/dη is computed by central finite difference,
+# which inherits the Gauss–Laguerre accuracy (≲ 10⁻⁶ relative).
+# ───────────────────────────────────────────────────────────────────────────
+_GL_X, _GL_W = np.polynomial.laguerre.laggauss(64)
+
+
+def _F12_scalar(eta: float) -> float:
+    if eta < -10.0:
+        z = float(np.exp(eta))
+        return z * (1.0 - z / 2.828427124746190 + (z * z) / 5.196152422706632
+                    - (z ** 3) / 8.0)
+    if eta > 30.0:
+        e2 = eta * eta
+        return (4.0 / (3.0 * np.sqrt(np.pi))) * eta ** 1.5 * (
+            1.0 + np.pi ** 2 / (8.0 * e2)
+            + 7.0 * np.pi ** 4 / (640.0 * e2 * e2))
+    # f(u) e^(-u) with f(u) = √u e^u / (1 + e^(u-η)). The exponentials cancel
+    # so the integrand stays bounded for all u ≥ 0.
+    u = _GL_X
+    # Use log-sum-exp style: 1/(1+e^(u-η)) = e^(η)/(e^η + e^u) → numerically stable.
+    denom = np.exp(eta) + np.exp(u)
+    f = np.sqrt(u) * np.exp(u + eta) / denom
+    return float((2.0 / np.sqrt(np.pi)) * np.sum(_GL_W * f))
+
+
+def fermi_dirac_half(eta):
+    """Fermi–Dirac integral ``F_{1/2}(η)`` (Blakemore convention: ``F_{1/2}(η) →
+    exp(η)`` as η→−∞; ``F_{1/2}(0) ≈ 0.7654``).
+
+    Scalar in → scalar out; array in → same-shape array out.
+    """
+    arr = np.asarray(eta, dtype=float)
+    if arr.ndim == 0:
+        return _F12_scalar(float(arr))
+    out = np.empty_like(arr)
+    flat = out.ravel()
+    src = arr.ravel()
+    for i in range(src.size):
+        flat[i] = _F12_scalar(float(src[i]))
+    return out
+
+
+def fermi_dirac_minus_half(eta):
+    """``F_{−1/2}(η) = dF_{1/2}/dη``, central difference of F_{1/2}."""
+    h = 1.0e-4
+    return (fermi_dirac_half(np.asarray(eta, dtype=float) + h)
+            - fermi_dirac_half(np.asarray(eta, dtype=float) - h)) / (2.0 * h)
 
 
 def solve_poisson_1d(
@@ -43,8 +160,11 @@ def solve_poisson_1d(
     a_m: float,
     U_left: float,
     U_right: float,
+    *,
+    left_bc: str = "dirichlet",
+    right_bc: str = "dirichlet",
 ) -> np.ndarray:
-    """Solve the 1D Poisson equation (★) with Dirichlet boundary conditions.
+    """Solve the 1D Poisson equation (★) with per-end Dirichlet or Neumann BCs.
 
     Parameters
     ----------
@@ -57,11 +177,25 @@ def solve_poisson_1d(
     a_m : float
         Uniform grid spacing (m).
     U_left, U_right : float
-        Dirichlet values of the electron potential energy at the two contact
-        sites (eV). For an applied bias ``V`` the natural choice is
-        ``U_left = +V/2``, ``U_right = −V/2`` (matching the solver's
-        ``μ_L = E_F + V/2`` convention), so Poisson carries the applied bias
-        while redistributing the interior potential.
+        For a Dirichlet end, the fixed value of the electron potential energy
+        at that contact (eV). For an applied bias ``V`` the natural Dirichlet
+        choice is ``U_left = +V/2``, ``U_right = −V/2`` (matching the solver's
+        ``μ_L = E_F + V/2`` convention). For a **Neumann** end the corresponding
+        argument is ignored (the zero-field condition carries no value).
+    left_bc, right_bc : {"dirichlet", "neumann"}
+        Boundary condition at each end. ``"neumann"`` imposes a **zero-field**
+        (``dU/dz = 0``) condition via a finite-volume half-cell balance — the
+        physical condition for a charge-neutral ohmic reservoir edge, where no
+        electric field penetrates the neutral bulk.
+
+        .. note::
+           A **both-ends Neumann** problem is singular: the Poisson operator's
+           nullspace is the constant vector, so the potential is defined only
+           up to a gauge and the total drop ``U[0]−U[-1]`` is fixed by the
+           charge — it *cannot* be set to an applied bias ``V``. This function
+           therefore rejects ``left_bc == right_bc == "neumann"``. A swept bias
+           needs at least one Dirichlet end (or an explicit ``U[0]−U[-1]=V``
+           constraint row, handled by the caller).
 
     Returns
     -------
@@ -74,6 +208,13 @@ def solve_poisson_1d(
     Np = N_D.size
     if not (eps_r.size == n_e.size == Np):
         raise ValueError("eps_r, N_D, n_e must have the same length")
+    if left_bc not in ("dirichlet", "neumann") or right_bc not in ("dirichlet", "neumann"):
+        raise ValueError("left_bc/right_bc must be 'dirichlet' or 'neumann'")
+    if left_bc == "neumann" and right_bc == "neumann":
+        raise ValueError(
+            "both-ends Neumann is singular (nullspace = const) and cannot "
+            "carry an applied bias; use at least one Dirichlet end."
+        )
 
     eps = eps_r * _EPS0          # F/m
     rho = _Q * (N_D - n_e)       # C/m³
@@ -82,12 +223,26 @@ def solve_poisson_1d(
     A = np.zeros((Np, Np))
     b = np.zeros(Np)
     for i in range(Np):
-        if i == 0:
+        if i == 0 and left_bc == "dirichlet":
             A[i, i] = 1.0
             b[i] = U_left
-        elif i == Np - 1:
+        elif i == Np - 1 and right_bc == "dirichlet":
             A[i, i] = 1.0
             b[i] = U_right
+        elif i == 0:
+            # Zero-field Neumann, left face: FV half-cell balance
+            #   ε_R (U[1]−U[0])/a² = ρ[0]/2   (left-face flux = 0).
+            eps_R = 0.5 * (eps[i] + eps[i + 1])
+            A[i, i] = -eps_R * inv_a2
+            A[i, i + 1] = eps_R * inv_a2
+            b[i] = 0.5 * rho[i]
+        elif i == Np - 1:
+            # Zero-field Neumann, right face: FV half-cell balance
+            #   ε_L (U[-2]−U[-1])/a² = ρ[-1]/2  (right-face flux = 0).
+            eps_L = 0.5 * (eps[i - 1] + eps[i])
+            A[i, i - 1] = eps_L * inv_a2
+            A[i, i] = -eps_L * inv_a2
+            b[i] = 0.5 * rho[i]
         else:
             eps_L = 0.5 * (eps[i - 1] + eps[i])
             eps_R = 0.5 * (eps[i] + eps[i + 1])
@@ -128,6 +283,10 @@ def poisson_newton_update(
     kT_screen: float,
     dirichlet_mask: np.ndarray | None = None,
     dirichlet_vals: np.ndarray | None = None,
+    neutral_mask: np.ndarray | None = None,
+    dn_dU_override: np.ndarray | None = None,
+    left_bc: str = "dirichlet",
+    right_bc: str = "dirichlet",
 ) -> np.ndarray:
     """One predictor–corrector (quasi-Newton) Poisson step.
 
@@ -178,8 +337,24 @@ def poisson_newton_update(
     eps = eps_r * _EPS0
     inv_a2 = 1.0 / (a_m * a_m)
     rho = _Q * (N_D - n_e)           # C/m³
-    dn_dU = -n_e / kT_screen         # m⁻³ / V  (≤ 0)
+    if dn_dU_override is not None:
+        dn_dU = np.asarray(dn_dU_override, dtype=float)
+    else:
+        dn_dU = -n_e / kT_screen     # Boltzmann predictor (m⁻³ / V, ≤ 0)
+    if left_bc not in ("dirichlet", "neumann") or right_bc not in ("dirichlet", "neumann"):
+        raise ValueError("left_bc/right_bc must be 'dirichlet' or 'neumann'")
+    if left_bc == "neumann" and right_bc == "neumann":
+        raise ValueError(
+            "both-ends Neumann is singular (nullspace = const) and cannot carry "
+            "an applied bias; keep one Dirichlet end as the gauge/bias reference."
+        )
     fixed, fvals = _dirichlet_setup(Np, U_left, U_right, dirichlet_mask, dirichlet_vals)
+    # A Neumann endpoint is a free unknown (zero-field), not a pinned value.
+    if left_bc == "neumann":
+        fixed[0] = False
+    if right_bc == "neumann":
+        fixed[-1] = False
+    _ = neutral_mask  # legacy arg; charge model is now assembled by the caller
 
     J = np.zeros((Np, Np))
     F = np.zeros(Np)
@@ -187,6 +362,19 @@ def poisson_newton_update(
         if fixed[i]:
             J[i, i] = 1.0
             F[i] = U_old[i] - fvals[i]
+        elif i == 0:
+            # Zero-field Neumann, left face (half-cell): flux in from the right
+            # balances the half-cell charge. dn/dU enters at half weight.
+            cR = 0.5 * (eps[i] + eps[i + 1]) * inv_a2
+            F[i] = cR * (U_old[i + 1] - U_old[i]) - 0.5 * rho[i]
+            J[i, i] = -cR + 0.5 * _Q * dn_dU[i]
+            J[i, i + 1] = cR
+        elif i == Np - 1:
+            # Zero-field Neumann, right face (half-cell).
+            cL = 0.5 * (eps[i - 1] + eps[i]) * inv_a2
+            F[i] = cL * (U_old[i - 1] - U_old[i]) - 0.5 * rho[i]
+            J[i, i - 1] = cL
+            J[i, i] = -cL + 0.5 * _Q * dn_dU[i]
         else:
             eps_L = 0.5 * (eps[i - 1] + eps[i])
             eps_R = 0.5 * (eps[i] + eps[i + 1])

@@ -532,6 +532,36 @@ DEVICES = {
         "notes": "SISPAD PRIMARY (sym variant). CBO=0.47eV for x_Mg=0.3 (multi-source, tunable as 1.57*x_Mg); ALD-matured process; demonstrated NDR in ZnO/Mg0.33Zn0.67O RTD by Tampo et al., IEEE NANO 2019. m*=0.28 m0 (ZnO well), LO phonon ~72 meV. Swapped in for In2O3/κ-Ga2O3 2026-04-07."
     },
 
+    "ZnO_MgZnO_symmetric_long": {
+        "description": "ZnO/Mg0.3Zn0.7O RTD with 30 nm doped leads — Poisson-friendly geometry (Akkala thesis Table 3.1 / Klimeck-group convention; same barrier/well as SISPAD primary)",
+        "layers": [
+            {"material": "ZnO", "thickness": 30e-9, "doping": 1e25},
+            {"material": "MgZnO", "thickness": 2.0e-9, "doping": 0},
+            {"material": "ZnO", "thickness": 3.0e-9, "doping": 0},
+            {"material": "MgZnO", "thickness": 2.0e-9, "doping": 0},
+            {"material": "ZnO", "thickness": 30e-9, "doping": 1e25}
+        ],
+        "transverse_size": (10e-6, 10e-6),
+        "molecule_location": "emitter_barrier",
+        "notes": "Same intrinsic stack as ZnO_MgZnO_symmetric (barriers 2/2 nm, well 3 nm, CBO 0.47, m* 0.28, ℏω 72 meV). Doped leads extended 10→30 nm to give the Fermi-Dirac contact screening room to fully pin the deep contact at the bias rail at high V (the 10 nm version develops ~350 mV of unphysical contact drop at V=0.8 V under self-consistent Poisson because TF screening length ~1 nm × ~7 nm reservoir room is insufficient). Used for --poisson sweeps; ZnO_MgZnO_symmetric remains the SISPAD reproduction device."
+    },
+
+    "ZnO_MgZnO_symmetric_spacer": {
+        "description": "ZnO/Mg0.3Zn0.7O RTD with 30 nm doped leads + 10 nm lightly-doped spacers — faithful to Akkala thesis Table 3.1 layer scheme",
+        "layers": [
+            {"material": "ZnO", "thickness": 30e-9, "doping": 1e25},
+            {"material": "ZnO", "thickness": 10e-9, "doping": 0},
+            {"material": "MgZnO", "thickness": 2.0e-9, "doping": 0},
+            {"material": "ZnO", "thickness": 3.0e-9, "doping": 0},
+            {"material": "MgZnO", "thickness": 2.0e-9, "doping": 0},
+            {"material": "ZnO", "thickness": 10e-9, "doping": 0},
+            {"material": "ZnO", "thickness": 30e-9, "doping": 1e25}
+        ],
+        "transverse_size": (10e-6, 10e-6),
+        "molecule_location": "emitter_barrier",
+        "notes": "Adds the 10 nm lightly-doped spacers that ZnO_MgZnO_symmetric_long omits. Akkala Table 3.1 places 10 nm 1e15 cm^-3 spacers between each doped lead and its barrier; the thesis states their purpose is to keep ionized impurities away from the coherent well region (§2.2) and that the emitter *notch* — the triangular well hosting the accumulation layer — forms in the emitter spacer and is captured by including it in the NEGF quantum region (§3.7). Spacer doping set to 0 rather than the thesis's 1e15 cm^-3 (=1e21 m^-3): that is a <0.1% correction against the ~1e24 m^-3 electron density there, and it is REQUIRED for correct classification -- build_electrostatics sets contact_mask = (doping>0), so a nonzero spacer doping puts the spacer inside the doped block, and terminal_masks then assigns spacer sites to the emitter TERMINAL, where the solver overwrites the NEGF density with Thomas-Fermi charge calibrated to the LEAD density (Nc_FD from N_D.max()=1e25). That forces ~1e25 electrons into a 1e21-doped region and the Poisson loop fails to converge. With doping=0 the spacer is correctly part of the quantum (reservoir) region, matching the thesis: 'the region between the terminals and the central region, that includes the spacer, will be referred to as reservoirs' (§3.2), with Green's functions computed there. WITHOUT these spacers the layer adjacent to the barrier is doped 1e25, so barrier-reflection suppression of n gives NET POSITIVE charge (depletion); WITH them that layer is ~undoped so any electrons give NET NEGATIVE charge (accumulation), as in the thesis. Barrier/well unchanged (2/3/2 nm, CBO 0.47, m* 0.28).",
+    },
+
     "ZnO_MgZnO_asymmetric": {
         "description": "ZnO/Mg0.3Zn0.7O RTD, Patil-style asymmetric (3 nm emitter / 1.5 nm collector) — SISPAD primary",
         "layers": [
