@@ -106,6 +106,12 @@ class TestRank1KeldyshAgainstPatil(unittest.TestCase):
             max_iter=max_iter,
             tol=1e-5,
             mix=0.5,
+            # The reference is Patil's plain linear mixer (mix_it = 0.5) run for a
+            # fixed 80 iterations; it is not converged at D^2 = 0.1 eV^2
+            # (conservation still 19-35% off). Comparing unconverged states is
+            # only meaningful with the same iteration scheme, so Anderson is off
+            # here -- and Anderson does not converge for this case at all.
+            anderson_depth=0,
         )
 
     def test_zero_bias_gives_zero_current(self) -> None:
@@ -155,6 +161,34 @@ class TestRank1KeldyshAgainstPatil(unittest.TestCase):
         )
         self.assertLess(rel, 0.02, msg)
 
+
+class TestAndersonMatchesLinearAtWeakCoupling(unittest.TestCase):
+    """Guard for the production mixer.
+
+    Production bulk coupling is weak (D^2 = 0.001 eV^2/site). There Anderson/DIIS
+    and plain linear mixing must reach the same fixed point. They do NOT at
+    D^2 >= 0.01 on this all-sites toy -- Anderson returns wrong-sign, unconverged
+    currents at some biases while linear mixing converges -- so a regression that
+    pushes Anderson off the fixed point at weak coupling must fail loudly.
+    """
+
+    def test_same_fixed_point(self) -> None:
+        ip = _build_patil_inputs()
+        for V in (0.16, 0.336, 0.5):
+            with self.subTest(V=V):
+                kw = dict(
+                    V=V, E_grid=ip["E_grid"], H_z=ip["H_z"], UB=ip["UB"],
+                    bias_profile=_bias_profile(V, ip["NS"], ip["NC"], ip["ND"]),
+                    t0=ip["t0"], Ef=ip["Ef"], kT=ip["kT"], chi_diag=ip["chi"],
+                    D0_sq_per_mode=(0.001, 0.001), hnu_idx_per_mode=ip["hnu_idx"],
+                    N_bose_per_mode=ip["N_bose"], tol=1e-8, mix=0.4, max_iter=400,
+                )
+                a = run_rank1_keldysh_single_bias(**kw)
+                lin = run_rank1_keldysh_single_bias(**kw, anderson_depth=0)
+                self.assertTrue(a.converged and lin.converged,
+                                f"V={V}: anderson conv={a.converged}, linear conv={lin.converged}")
+                rel = abs(a.I_right - lin.I_right) / abs(lin.I_right)
+                self.assertLess(rel, 1e-5, f"V={V}: anderson vs linear rel={rel:.2e}")
 
 if __name__ == "__main__":
     unittest.main()

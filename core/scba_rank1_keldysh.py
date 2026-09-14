@@ -258,6 +258,7 @@ def run_rank1_keldysh_single_bias(
     tol: float = 1e-5,
     mix: float = 0.5,
     eta: float = 1e-12,
+    anderson_depth: int = 8,
 ) -> Rank1KeldyshResult:
     """Run Patil's bulk-phonon SCBA at a single bias and return all observables.
 
@@ -275,6 +276,17 @@ def run_rank1_keldysh_single_bias(
 
     Parameters mirror Patil's MATLAB and the Python port; see
     ``tests/patil_reference_1d.py`` for a working example of input shapes.
+
+    ``anderson_depth`` sets the Anderson/DIIS history length used to mix the
+    phonon self-energy (default 8, the production setting). ``0`` gives plain
+    linear mixing, ``sigma <- (1-mix)*sigma + mix*sigma_new``, which is what
+    Patil's MATLAB and ``tests/patil_reference_1d.py`` do. The distinction
+    matters at strong coupling. On Patil's toy (chi = 1 on every site) the two
+    agree to ~1e-7 at D^2 = 0.001 eV^2, but at D^2 = 0.01 Anderson already
+    returns wrong-sign, unconverged currents at some biases where linear
+    mixing converges, and at D^2 = 0.1 it drifts to a non-physical state
+    (I_R ~3% of the reference) while linear mixing reproduces the reference
+    to 0.6% at the NDR peak. Check ``converged`` before trusting a result.
     """
     Np = H_z.shape[0]
     NE = E_grid.size
@@ -307,7 +319,7 @@ def run_rank1_keldysh_single_bias(
     # only: sig_{in,out}_ph are diagonal in Patil's formulation, so we
     # flatten the diagonals into a single real vector for the mixing.
     _diag = np.arange(Np)
-    _anderson_depth = 8  # number of history vectors to keep
+    _anderson_depth = anderson_depth  # history vectors kept; 0 = plain linear mixing
     _x_hist: list[np.ndarray] = []  # input vectors
     _r_hist: list[np.ndarray] = []  # residual vectors
 
