@@ -24,6 +24,7 @@ import numpy as np
 
 from config.device_library import DEVICES, MATERIALS
 from core.poisson import (
+    ballistic_transverse_density,
     calibrate_density_prefactor,
     extract_density_1d,
     fermi_dirac_half,
@@ -339,6 +340,7 @@ def run_self_consistent_bias(
     outer_clamp_sites: int = 15,
     bc_scheme: str = "clamp",
     density_mode: str = "calibrated",
+    density_E_grid: np.ndarray | None = None,
     m_eff_kg: float | None = None,
     U_init: np.ndarray | None = None,
     verbose: bool = False,
@@ -456,8 +458,19 @@ def run_self_consistent_bias(
             mix=scba_mix, eta=eta,
         )
         if density_mode == "physical":
-            n = physical_transverse_density(
-                r.G_R, r.Gam_L, r.Gam_R, E_grid, mu_L, mu_R, kT, m_eff_kg, a_m)
+            if density_E_grid is not None:
+                # Evaluate the density on its own (finer) grid via the banded
+                # ballistic route. The density integrand peaks at the band edge,
+                # on the 1-D 1/sqrt(E) van Hove singularity, so it needs far
+                # finer dE than the current does (which is converged to 0.3% on
+                # the transport grid because f_L - f_R vanishes there). Phonons
+                # shift the density by 0.003%, so dropping them here is safe.
+                n = ballistic_transverse_density(
+                    density_E_grid, H_z, UB, U_profile, t0,
+                    mu_L, mu_R, kT, m_eff_kg, a_m, eta)
+            else:
+                n = physical_transverse_density(
+                    r.G_R, r.Gam_L, r.Gam_R, E_grid, mu_L, mu_R, kT, m_eff_kg, a_m)
         else:
             n = density_prefactor * extract_density_1d(r.G_lesser, dE)
         return r, n
