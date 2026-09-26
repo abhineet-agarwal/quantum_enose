@@ -239,6 +239,66 @@ _QE = 1.602176634e-19
 _IE_PREFACTOR = (_QE * _QE) / (2.0 * np.pi * _HBAR)  # Patil "IE" constant
 
 
+_HBAR_JS = 1.054571817e-34  # J*s
+
+
+def coherent_transmission(G_R: np.ndarray, Gam_L: np.ndarray,
+                          Gam_R: np.ndarray) -> np.ndarray:
+    """Elastic transmission T(E) = Tr[Gam_L G^R Gam_R G^A] (Fisher-Lee/Caroli).
+
+    With a converged SCBA G^R this is the *coherent* part of transport: the
+    phonon self-energy enters through the dressed G^R, but the inelastic
+    (incoherent) contribution to the current is not included. Compare against
+    ``Rank1KeldyshResult.I_right`` (Meir-Wingreen, which includes both) to see
+    how much of the current is inelastic.
+    """
+    G_A = np.conj(np.transpose(G_R, (0, 2, 1)))
+    return np.real(np.einsum('kij,kjl,klm,kmi->k', Gam_L, G_R, Gam_R, G_A))
+
+
+def tsu_esaki_current(E_grid: np.ndarray, T_E: np.ndarray, mu_L: float,
+                      mu_R: float, kT: float, m_eff_kg: float,
+                      area_m2: float) -> float:
+    """Transverse-integrated (device) current from an elastic transmission.
+
+    ``run_rank1_keldysh_single_bias`` returns the current of a **single spin in
+    a single transverse mode**: its prefactor is q/h, the Landauer quantum per
+    mode per spin. A real pixel of area A_perp >> lambda_dB carries a continuum
+    of transverse modes. For a separable parabolic transverse dispersion the
+    mode sum becomes an integral that can be done analytically,
+
+        int_0^inf dE_t [f(E+E_t-mu_L) - f(E+E_t-mu_R)]
+            = kT [ ln(1+e^{(mu_L-E)/kT}) - ln(1+e^{(mu_R-E)/kT}) ],
+
+    giving the Tsu-Esaki form (docs/STACK_DECISION.md Sec. 3,
+    docs/METHOD_DERIVATION.md Sec. 9.4):
+
+        I = A_perp * (q m* kT) / (2 pi^2 hbar^3)
+              * int dE T(E) [ ln(1+e^{(mu_L-E)/kT}) - ln(1+e^{(mu_R-E)/kT}) ]
+
+    Spin degeneracy 2 is included in the prefactor. Energies (``E_grid``,
+    ``mu_*``, ``kT``) are in eV; the grid may be non-uniform.
+
+    NOTE this is exact for elastic transport only. With inelastic scattering
+    the transverse integral does not factorise, because the phonon
+    self-energies depend on the occupations and therefore on E_t; an exact
+    treatment needs the SCBA solved per transverse energy. Check the inelastic
+    fraction (see :func:`coherent_transmission`) before relying on it.
+    """
+    E = np.asarray(E_grid, dtype=float)
+
+    def _supply(mu):
+        x = (mu - E) / kT
+        return np.where(x > 30.0, x, np.log1p(np.exp(np.clip(x, -600.0, 30.0))))
+
+    integrand = np.asarray(T_E, dtype=float) * (_supply(mu_L) - _supply(mu_R))
+    trapz = getattr(np, "trapezoid", None) or np.trapz
+    integral = float(trapz(integrand, E))          # eV
+    # q^3: one q for the eV->J of kT, one for dE, one for the charge itself.
+    prefac = area_m2 * m_eff_kg * kT * _QE ** 3 / (2.0 * np.pi ** 2 * _HBAR_JS ** 3)
+    return prefac * integral
+
+
 def run_rank1_keldysh_single_bias(
     *,
     V: float,
