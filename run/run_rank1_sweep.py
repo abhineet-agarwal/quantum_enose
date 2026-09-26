@@ -34,7 +34,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from config.device_library import DEVICES, MATERIALS, get_band_offset
 from config.molecular_database import MOLECULES
 from core.iets_analytic import analytic_d2idv2_inelastic_at_bias
-from core.scba_rank1_keldysh import run_rank1_keldysh_single_bias
+from core.scba_rank1_keldysh import (
+    coherent_transmission,
+    run_rank1_keldysh_single_bias,
+    transverse_integrated_current,
+    tsu_esaki_current,
+)
 from core.poisson_negf import (
     build_electrostatics,
     compute_density_prefactor,
@@ -230,6 +235,8 @@ def run_sweep(
     density_prefactor_scale: float = 1.0,
     density_mode: str = "calibrated",
     flat_band_contacts: bool = False,
+    transverse: bool = False,
+    transverse_nodes: int = 10,
     out_dir: str | None = None,
     verbose: bool = True,
 ):
@@ -297,6 +304,9 @@ def run_sweep(
     # deep contact (charge neutrality without a fit constant); this is the doping
     # the model's Fermi level actually supports.
     m_eff_kg = MATERIALS["ZnO"]["m_eff"] * _M0
+    # Sensor-pixel area for the transverse-mode sum (docs/STACK_DECISION.md Sec. 3).
+    A_TRANS_M2 = float(DEVICES[device]["transverse_size"][0]
+                       * DEVICES[device]["transverse_size"][1])
     if use_poisson and density_mode == "physical":
         from core.poisson import physical_transverse_density
         bp0 = linear_bias_profile(0.0, Np, NS, ND)
@@ -333,6 +343,14 @@ def run_sweep(
     V_grid = np.linspace(V_min, V_max, V_points)
     I_L = np.zeros(V_points)
     I_R = np.zeros(V_points)
+    # Device currents. I_L/I_R are per spin per transverse mode (prefactor
+    # q/h). I_dev_elastic applies the analytic Tsu-Esaki transverse sum to
+    # the coherent transmission -- free, but it drops the inelastic current,
+    # which is 3-24% here and differs between molecules, i.e. it is exactly
+    # the fingerprint. I_device is the exact E_t quadrature (one solve per
+    # node) and is only filled when transverse=True.
+    I_dev_elastic = np.zeros(V_points)
+    I_device = np.zeros(V_points)
     d2I = np.zeros(V_points)
     iters = np.zeros(V_points, dtype=int)
     converged = np.zeros(V_points, dtype=bool)
@@ -361,6 +379,7 @@ def run_sweep(
                 U_init=U_warm,
             )
             res = sc.result
+            bp_used = sc.U
             U_warm = sc.U
             U_profiles[i] = sc.U
             n_profiles[i] = sc.n_e
@@ -372,6 +391,7 @@ def run_sweep(
                 bp = flat_contact_profile(float(V), contact_mask, dvals)
             else:
                 bp = linear_bias_profile(V, Np, NS, ND)
+            bp_used = bp
             res = run_rank1_keldysh_single_bias(
                 V=float(V),
                 E_grid=E_grid,
@@ -393,6 +413,28 @@ def run_sweep(
             )
         I_L[i] = res.I_left
         I_R[i] = res.I_right
+        mu_L, mu_R = Ef + V / 2.0, Ef - V / 2.0
+        T_coh = coherent_transmission(res.G_R, res.Gam_L, res.Gam_R)
+        I_dev_elastic[i] = tsu_esaki_current(
+            E_grid, T_coh, mu_L, mu_R, kT, m_eff_kg, A_TRANS_M2)
+        if transverse:
+            # Transverse energy E_t enters only through the contact occupations,
+            # so solving at E_t == solving with Ef lowered by E_t at the SAME
+            # bias profile. Exact, inelastic included.
+            def _solve_at_Ef(ef, _bp=bp_used, _V=float(V)):
+                return run_rank1_keldysh_single_bias(
+                    V=_V, E_grid=E_grid, H_z=H_z, UB=UB, bias_profile=_bp,
+                    t0=t0, Ef=ef, kT=kT, chi_diag=chi_default,
+                    D0_sq_per_mode=D0_sq, hnu_idx_per_mode=hnu_idx,
+                    N_bose_per_mode=N_bose, chi_per_mode=chi_list,
+                    max_iter=scba_max_iter, tol=scba_tol, mix=scba_mix, eta=eta,
+                )
+            # integrand dies once Ef - E_t drops below the transmitting window;
+            # carry the Fermi tail above mu_L too.
+            e_max = float(mu_L + 12.0 * kT)
+            I_device[i], _, _ = transverse_integrated_current(
+                lambda ef: _solve_at_Ef(ef).I_right, Ef, kT, m_eff_kg,
+                A_TRANS_M2, e_max, transverse_nodes)
         d2I[i] = analytic_d2idv2_inelastic_at_bias(res, kT=kT, E_F=Ef)
         iters[i] = res.iters_used
         converged[i] = res.converged
@@ -442,6 +484,12 @@ def run_sweep(
         D0_sq=np.asarray(D0_sq), hnu_idx=np.asarray(hnu_idx),
         N_bose=np.asarray(N_bose),
         A_trans_m2=A_trans_m2,
+        # I_L/I_R are per spin per transverse mode (prefactor q/h).
+        # I_dev_elastic: analytic Tsu-Esaki transverse sum of the coherent
+        # transmission (free, elastic only). I_device: exact E_t quadrature
+        # including inelastic transport; zero unless transverse=True.
+        I_dev_elastic=I_dev_elastic, I_device=I_device,
+        transverse=transverse, transverse_nodes=transverse_nodes,
         scba_max_iter=scba_max_iter, scba_mix=scba_mix, scba_tol=scba_tol,
         eta=eta, sigma_mol_nm=sigma_mol_nm,
         use_poisson=use_poisson,
@@ -502,6 +550,11 @@ def main():
                     help="'calibrated' = single prefactor C (default); 'physical' "
                          "= transverse-integrated supply-function density, no fit "
                          "constant (donors anchored to equilibrium physical density)")
+    ap.add_argument("--transverse", action="store_true",
+                    help="also compute the exact transverse-mode-integrated device "
+                         "current (one extra solve per quadrature node per bias)")
+    ap.add_argument("--transverse-nodes", type=int, default=10,
+                    help="Gauss-Legendre nodes for the transverse-energy integral")
     ap.add_argument("--out-dir", default=None)
     args = ap.parse_args()
 
@@ -521,6 +574,7 @@ def main():
             poisson_bc=args.poisson_bc,
             density_prefactor_scale=args.density_prefactor_scale,
             density_mode=args.density_mode,
+            transverse=args.transverse, transverse_nodes=args.transverse_nodes,
             out_dir=args.out_dir,
         )
 

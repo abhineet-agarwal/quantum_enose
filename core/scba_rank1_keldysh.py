@@ -299,6 +299,53 @@ def tsu_esaki_current(E_grid: np.ndarray, T_E: np.ndarray, mu_L: float,
     return prefac * integral
 
 
+def transverse_integrated_current(current_at_Ef, Ef: float, kT: float,
+                                  m_eff_kg: float, area_m2: float,
+                                  e_max: float, n_nodes: int = 12):
+    """Exact transverse-mode integration of a per-mode current.
+
+    The transverse dispersion is separable and parabolic, and the longitudinal
+    Hamiltonian does not depend on the transverse energy E_t. Running the
+    longitudinal problem at E_t is therefore identical to running it with BOTH
+    contact chemical potentials lowered by E_t, i.e. with ``Ef -> Ef - E_t`` at
+    fixed V. Hence
+
+        I_device = A_perp * 2 * m*/(2 pi hbar^2) * int_0^inf dE_t I_1mode(Ef - E_t)
+
+    This is exact **including inelastic scattering**, unlike
+    :func:`tsu_esaki_current`, which assumes elastic transport: the phonon
+    self-energies depend on the contact occupations and hence on E_t, so the
+    transverse integral does not otherwise factorise. Substituting the Landauer
+    form for ``I_1mode`` reduces this expression analytically to Tsu-Esaki, so
+    the two agree in the elastic limit.
+
+    Parameters
+    ----------
+    current_at_Ef : callable
+        ``current_at_Ef(Ef_shifted) -> float`` returning the per-mode, per-spin
+        current in A at the shifted Fermi level (V held fixed).
+    Ef, kT, e_max : float
+        Fermi level, thermal energy and upper limit of the E_t integral, in eV.
+        The integrand falls off once ``Ef - E_t`` drops below the transmitting
+        window; check convergence in ``e_max`` as well as in ``n_nodes``.
+    n_nodes : int
+        Gauss-Legendre nodes on ``[0, e_max]``. The integrand is smooth, so
+        few nodes suffice, but each one costs a full solve.
+
+    Returns
+    -------
+    (I_device, nodes, values) : the current in A, the E_t nodes, and the
+    per-mode currents at those nodes (returned so convergence can be inspected
+    without re-solving).
+    """
+    x, w = np.polynomial.legendre.leggauss(int(n_nodes))
+    nodes = 0.5 * e_max * (x + 1.0)
+    weights = 0.5 * e_max * w
+    values = np.array([float(current_at_Ef(Ef - float(Et))) for Et in nodes])
+    prefac = area_m2 * 2.0 * m_eff_kg / (2.0 * np.pi * _HBAR_JS ** 2) * _QE
+    return prefac * float(np.dot(weights, values)), nodes, values
+
+
 def run_rank1_keldysh_single_bias(
     *,
     V: float,
