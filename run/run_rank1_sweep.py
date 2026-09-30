@@ -37,6 +37,7 @@ from core.iets_analytic import analytic_d2idv2_inelastic_at_bias
 from core.scba_rank1_keldysh import (
     coherent_transmission,
     run_rank1_keldysh_single_bias,
+    run_rank1_keldysh_single_bias_fast,
     transverse_integrated_current,
     tsu_esaki_current,
 )
@@ -237,6 +238,11 @@ def run_sweep(
     flat_band_contacts: bool = False,
     transverse: bool = False,
     transverse_nodes: int = 10,
+    # Diagonal-Sigma SCBA: ~3x faster, agrees with the reference solver to
+    # <2e-6 (well inside the 1e-4 SCBA tolerance) but NOT bit-identical, so
+    # the default stays on the reference path that the bit-exact SISPAD
+    # reproduction was verified against.
+    fast_solver: bool = False,
     out_dir: str | None = None,
     verbose: bool = True,
 ):
@@ -304,6 +310,8 @@ def run_sweep(
     # deep contact (charge neutrality without a fit constant); this is the doping
     # the model's Fermi level actually supports.
     m_eff_kg = MATERIALS["ZnO"]["m_eff"] * _M0
+    _solve = (run_rank1_keldysh_single_bias_fast if fast_solver
+              else run_rank1_keldysh_single_bias)
     # Sensor-pixel area for the transverse-mode sum (docs/STACK_DECISION.md Sec. 3).
     A_TRANS_M2 = float(DEVICES[device]["transverse_size"][0]
                        * DEVICES[device]["transverse_size"][1])
@@ -392,7 +400,7 @@ def run_sweep(
             else:
                 bp = linear_bias_profile(V, Np, NS, ND)
             bp_used = bp
-            res = run_rank1_keldysh_single_bias(
+            res = _solve(
                 V=float(V),
                 E_grid=E_grid,
                 H_z=H_z,
@@ -422,7 +430,7 @@ def run_sweep(
             # so solving at E_t == solving with Ef lowered by E_t at the SAME
             # bias profile. Exact, inelastic included.
             def _solve_at_Ef(ef, _bp=bp_used, _V=float(V)):
-                return run_rank1_keldysh_single_bias(
+                return _solve(
                     V=_V, E_grid=E_grid, H_z=H_z, UB=UB, bias_profile=_bp,
                     t0=t0, Ef=ef, kT=kT, chi_diag=chi_default,
                     D0_sq_per_mode=D0_sq, hnu_idx_per_mode=hnu_idx,
@@ -553,6 +561,8 @@ def main():
     ap.add_argument("--transverse", action="store_true",
                     help="also compute the exact transverse-mode-integrated device "
                          "current (one extra solve per quadrature node per bias)")
+    ap.add_argument("--fast-solver", action="store_true",
+                    help="diagonal-Sigma SCBA (~3x faster; agrees to <2e-6, not bit-exact)")
     ap.add_argument("--transverse-nodes", type=int, default=10,
                     help="Gauss-Legendre nodes for the transverse-energy integral")
     ap.add_argument("--out-dir", default=None)
@@ -575,6 +585,7 @@ def main():
             density_prefactor_scale=args.density_prefactor_scale,
             density_mode=args.density_mode,
             transverse=args.transverse, transverse_nodes=args.transverse_nodes,
+            fast_solver=args.fast_solver,
             out_dir=args.out_dir,
         )
 
