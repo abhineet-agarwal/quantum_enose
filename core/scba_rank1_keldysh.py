@@ -252,8 +252,21 @@ def coherent_transmission(G_R: np.ndarray, Gam_L: np.ndarray,
     ``Rank1KeldyshResult.I_right`` (Meir-Wingreen, which includes both) to see
     how much of the current is inelastic.
     """
+    # Gam_L is nonzero only at (0,0) and Gam_R only at (Np-1,Np-1) (see
+    # contact_gammas), so the trace collapses to a single element:
+    #     Tr[Gam_L G Gam_R G^dag] = Gam_L[0,0] * Gam_R[-1,-1] * |G[0,-1]|^2
+    # Doing this as a 4-operand einsum instead costs O(Np^4) per energy under
+    # numpy's default (un-optimised) contraction order -- minutes per call at
+    # NE=376, Np=135 -- so the sparse form is used whenever it applies.
+    Np = G_R.shape[1]
+    off = np.arange(Np) != 0
+    corner_only = (not np.any(Gam_L[:, off, :]) and not np.any(Gam_L[:, :, off])
+                   and not np.any(Gam_R[:, :-1, :]) and not np.any(Gam_R[:, :, :-1]))
+    if corner_only:
+        return np.real(Gam_L[:, 0, 0] * Gam_R[:, -1, -1] * np.abs(G_R[:, 0, -1]) ** 2)
     G_A = np.conj(np.transpose(G_R, (0, 2, 1)))
-    return np.real(np.einsum('kij,kjl,klm,kmi->k', Gam_L, G_R, Gam_R, G_A))
+    return np.real(np.einsum('kij,kjl,klm,kmi->k', Gam_L, G_R, Gam_R, G_A,
+                             optimize=True))
 
 
 def tsu_esaki_current(E_grid: np.ndarray, T_E: np.ndarray, mu_L: float,
