@@ -36,6 +36,7 @@ from config.molecular_database import MOLECULES
 from core.iets_analytic import analytic_d2idv2_inelastic_at_bias
 from core.scba_rank1_keldysh import (
     coherent_transmission,
+    landauer_current_1mode,
     run_rank1_keldysh_single_bias,
     run_rank1_keldysh_single_bias_fast,
     transverse_integrated_current,
@@ -438,12 +439,22 @@ def run_sweep(
                     N_bose_per_mode=N_bose, chi_per_mode=chi_list,
                     max_iter=scba_max_iter, tol=scba_tol, mix=scba_mix, eta=eta,
                 )
-            # integrand dies once Ef - E_t drops below the transmitting window;
-            # carry the Fermi tail above mu_L too.
-            e_max = float(mu_L + transverse_emax_kt * kT)
+            # Electrons are injected only above the emitter band edge (+V/2),
+            # and mu_L - E_t = V/2 + Ef - E_t falls below it once E_t > Ef, so
+            # the integrand lives on E_t < Ef + O(kT) whatever the bias
+            # (measured at 10 K, 576 mV: zero beyond 24 meV). A window of
+            # mu_L + 12 kT added V/2 of dead range and left one of 8 nodes in
+            # the support at 10 K, reading 28 % high.
+            e_max = float(Ef + transverse_emax_kt * kT)
+            # Subtract this solve's elastic Landauer current, whose E_t integral
+            # is I_dev_elastic exactly; the quadrature only sees the remainder.
+            def _elastic_at_Ef(ef, _T=T_coh, _V=float(V)):
+                return landauer_current_1mode(E_grid, _T, ef + _V / 2.0,
+                                              ef - _V / 2.0, kT)
             I_device[i], _, _ = transverse_integrated_current(
                 lambda ef: _solve_at_Ef(ef).I_right, Ef, kT, m_eff_kg,
-                A_TRANS_M2, e_max, transverse_nodes)
+                A_TRANS_M2, e_max, transverse_nodes,
+                control=_elastic_at_Ef, control_exact=I_dev_elastic[i])
         d2I[i] = analytic_d2idv2_inelastic_at_bias(res, kT=kT, E_F=Ef)
         iters[i] = res.iters_used
         converged[i] = res.converged
@@ -536,6 +547,10 @@ def main():
     ap.add_argument("--scba-max-iter", type=int, default=10)
     ap.add_argument("--scba-mix", type=float, default=0.4)
     ap.add_argument("--scba-tol", type=float, default=1e-5)
+    ap.add_argument("--Ef", type=float, default=0.02,
+                    help="contact Fermi level in eV (default 0.02). For a temperature "
+                         "sweep at fixed doping this must move with T; holding it fixed "
+                         "changes the emitter electron density with T")
     ap.add_argument("--T", type=float, default=300.0, help="Temperature in K")
     ap.add_argument("--poisson", action="store_true",
                     help="Enable self-consistent Poisson–NEGF (default OFF; "
@@ -568,9 +583,9 @@ def main():
     ap.add_argument("--transverse-nodes", type=int, default=10,
                     help="Gauss-Legendre nodes for the transverse-energy integral")
     ap.add_argument("--transverse-emax-kt", type=float, default=12.0,
-                    help="upper limit of the E_perp integral as mu_L + THIS*kT; the "
-                         "integrand dies once Ef-E_perp leaves the transmitting window, "
-                         "so this needs a convergence check at each temperature")
+                    help="upper limit of the E_perp integral as Ef + THIS*kT, i.e. "
+                         "measured from the emitter band edge: electrons are injected "
+                         "only above it, so the integrand vanishes beyond this")
     ap.add_argument("--out-dir", default=None)
     args = ap.parse_args()
 
@@ -581,7 +596,7 @@ def main():
             device=args.device,
             V_min=args.V_min, V_max=args.V_max, V_points=args.V_points,
             dE=args.dE,
-            T_K=args.T,
+            T_K=args.T, Ef=args.Ef,
             scba_max_iter=args.scba_max_iter, scba_mix=args.scba_mix,
             scba_tol=args.scba_tol,
             use_poisson=args.poisson, poisson_max_iter=args.poisson_max_iter,

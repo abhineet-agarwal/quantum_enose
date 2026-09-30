@@ -312,9 +312,26 @@ def tsu_esaki_current(E_grid: np.ndarray, T_E: np.ndarray, mu_L: float,
     return prefac * integral
 
 
+def landauer_current_1mode(E_grid: np.ndarray, T_E: np.ndarray, mu_L: float,
+                           mu_R: float, kT: float) -> float:
+    """Per-mode, per-spin elastic current in A: (q^2/h) int T(E) [f_L - f_R] dE.
+
+    Same q/h-per-spin convention as the solver's ``I_right`` and the same
+    trapezoid rule in E as :func:`tsu_esaki_current`, so its E_t integral is
+    exactly ``tsu_esaki_current`` -- which is what makes it usable as the
+    control in :func:`transverse_integrated_current`.
+    """
+    E = np.asarray(E_grid, dtype=float)
+    def _f(mu):  # tanh form cannot overflow at low kT
+        return 0.5 * (1.0 - np.tanh(0.5 * (E - mu) / kT))
+    trapz = getattr(np, "trapezoid", None) or np.trapz
+    return _IE_PREFACTOR * float(trapz(np.asarray(T_E, dtype=float) * (_f(mu_L) - _f(mu_R)), E))
+
+
 def transverse_integrated_current(current_at_Ef, Ef: float, kT: float,
                                   m_eff_kg: float, area_m2: float,
-                                  e_max: float, n_nodes: int = 12):
+                                  e_max: float, n_nodes: int = 12,
+                                  control=None, control_exact=None):
     """Exact transverse-mode integration of a per-mode current.
 
     The transverse dispersion is separable and parabolic, and the longitudinal
@@ -342,8 +359,18 @@ def transverse_integrated_current(current_at_Ef, Ef: float, kT: float,
         The integrand falls off once ``Ef - E_t`` drops below the transmitting
         window; check convergence in ``e_max`` as well as in ``n_nodes``.
     n_nodes : int
-        Gauss-Legendre nodes on ``[0, e_max]``. The integrand is smooth, so
-        few nodes suffice, but each one costs a full solve.
+        Gauss-Legendre nodes on ``[0, e_max]``. Each one costs a full solve.
+    control, control_exact : callable, float, optional
+        Control variate. ``control(Ef_shifted)`` is a cheap per-mode current
+        with the same E_t structure as the integrand, and ``control_exact`` is
+        its E_t integral done analytically, already in device units (A). The
+        quadrature then only sees ``current_at_Ef - control``. The result is
+        exact for ANY control; a closer one just needs fewer nodes. Use
+        :func:`landauer_current_1mode` on the central solve's coherent
+        transmission, whose exact integral is :func:`tsu_esaki_current`. At
+        low T the per-mode current is confined to a narrow E_t range with
+        kT-wide edges, which a fixed Gauss-Legendre rule misses (8 nodes read
+        +29 % at 10 K); the elastic control carries that structure exactly.
 
     Returns
     -------
@@ -356,7 +383,13 @@ def transverse_integrated_current(current_at_Ef, Ef: float, kT: float,
     weights = 0.5 * e_max * w
     values = np.array([float(current_at_Ef(Ef - float(Et))) for Et in nodes])
     prefac = area_m2 * 2.0 * m_eff_kg / (2.0 * np.pi * _HBAR_JS ** 2) * _QE
-    return prefac * float(np.dot(weights, values)), nodes, values
+    if control is None:
+        return prefac * float(np.dot(weights, values)), nodes, values
+    if control_exact is None:
+        raise ValueError("control requires control_exact")
+    ctrl = np.array([float(control(Ef - float(Et))) for Et in nodes])
+    return (float(control_exact) + prefac * float(np.dot(weights, values - ctrl)),
+            nodes, values)
 
 
 def fba_phonon_sigma_diag(Gl_diag, Gg_diag, chi_diag, D0_sq_per_mode,
