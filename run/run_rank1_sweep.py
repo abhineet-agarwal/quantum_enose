@@ -238,6 +238,7 @@ def run_sweep(
     flat_band_contacts: bool = False,
     transverse: bool = False,
     transverse_nodes: int = 10,
+    transverse_emax_kt: float = 12.0,
     # Diagonal-Sigma SCBA: ~3x faster, agrees with the reference solver to
     # <2e-6 (well inside the 1e-4 SCBA tolerance) but NOT bit-identical, so
     # the default stays on the reference path that the bit-exact SISPAD
@@ -439,7 +440,7 @@ def run_sweep(
                 )
             # integrand dies once Ef - E_t drops below the transmitting window;
             # carry the Fermi tail above mu_L too.
-            e_max = float(mu_L + 12.0 * kT)
+            e_max = float(mu_L + transverse_emax_kt * kT)
             I_device[i], _, _ = transverse_integrated_current(
                 lambda ef: _solve_at_Ef(ef).I_right, Ef, kT, m_eff_kg,
                 A_TRANS_M2, e_max, transverse_nodes)
@@ -498,6 +499,7 @@ def run_sweep(
         # including inelastic transport; zero unless transverse=True.
         I_dev_elastic=I_dev_elastic, I_device=I_device,
         transverse=transverse, transverse_nodes=transverse_nodes,
+        transverse_emax_kt=transverse_emax_kt,
         scba_max_iter=scba_max_iter, scba_mix=scba_mix, scba_tol=scba_tol,
         eta=eta, sigma_mol_nm=sigma_mol_nm,
         use_poisson=use_poisson,
@@ -565,6 +567,10 @@ def main():
                     help="diagonal-Sigma SCBA (~3x faster; agrees to <2e-6, not bit-exact)")
     ap.add_argument("--transverse-nodes", type=int, default=10,
                     help="Gauss-Legendre nodes for the transverse-energy integral")
+    ap.add_argument("--transverse-emax-kt", type=float, default=12.0,
+                    help="upper limit of the E_perp integral as mu_L + THIS*kT; the "
+                         "integrand dies once Ef-E_perp leaves the transmitting window, "
+                         "so this needs a convergence check at each temperature")
     ap.add_argument("--out-dir", default=None)
     args = ap.parse_args()
 
@@ -585,6 +591,7 @@ def main():
             density_prefactor_scale=args.density_prefactor_scale,
             density_mode=args.density_mode,
             transverse=args.transverse, transverse_nodes=args.transverse_nodes,
+            transverse_emax_kt=args.transverse_emax_kt,
             fast_solver=args.fast_solver,
             out_dir=args.out_dir,
         )

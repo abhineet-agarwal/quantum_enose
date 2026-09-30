@@ -48,14 +48,18 @@ IV_LABEL = {
 D_LABEL = {"Mol_A": r"$\Delta$Mol_A", "Mol_B": r"$\Delta$Mol_B", "Mol_AB": r"$\Delta$Mol_AB"}
 
 
-def load_51pt(data_dir, mol):
+def load_51pt(data_dir, mol, field="I_R"):
     """Load the clean 51-point (16 mV) 300 K sweep for `mol` (any run date)."""
     best = None
     for f in sorted(glob.glob(os.path.join(
             data_dir, f"iets_ZnO_MgZnO_symmetric_{mol}_0-800mV_300K_rank1scba_*.npz"))):
         a = np.load(f, allow_pickle=True)
         if a["V"].size <= 60:          # 51-pt files; skip the 201-pt grid
-            best = (a["V"], a["I_R"])
+            if field not in a.files:
+                raise SystemExit(
+                    f"{f} has no '{field}' field (fields: {sorted(a.files)}). "
+                    f"Re-run the sweep with --transverse to emit the device current.")
+            best = (a["V"], a[field])
     return best
 
 
@@ -69,25 +73,47 @@ TEMPS = [10, 77, 150, 300]
 TEMP_LABEL = {10: "10 K", 77: "77 K", 150: "150 K", 300: "300 K"}
 
 
-def load_temp_51pt(data_dir, T_K):
+def load_temp_51pt(data_dir, T_K, field="I_R"):
     """Load the 51-pt Mol_A sweep at temperature T_K (any run date)."""
     best = None
     for f in sorted(glob.glob(os.path.join(
             data_dir, f"iets_ZnO_MgZnO_symmetric_Mol_A_0-800mV_{T_K}K_rank1scba_*.npz"))):
         a = np.load(f, allow_pickle=True)
         if a["V"].size <= 60:          # 51-pt grid, consistent with Fig 3
-            best = (a["V"], a["I_R"])
+            if field not in a.files:
+                raise SystemExit(f"{f} has no '{field}' field (fields: {sorted(a.files)}).")
+            best = (a["V"], a[field])
     return best
+
+
+# `I_R` is the current for ONE transverse mode (the 1D NEGF channel); `I_device`
+# is that integrated over E_perp with the 10 um x 10 um area prefactor, so the
+# two differ by ~2e6 and need different axis units.
+CURRENT_UNITS = {
+    "I_R":           (1e9, "nA"),
+    "I_L":           (1e9, "nA"),
+    "I_dev_elastic": (1e3, "mA"),
+    "I_device":      (1e3, "mA"),
+}
+CURRENT_TAG = {
+    "I_R": "single transverse mode", "I_L": "single transverse mode",
+    "I_dev_elastic": "device, elastic only", "I_device": "device",
+}
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default="results/sispad_scba_2026-04-14")
     ap.add_argument("--out-dir", default="results/sispad_scba_2026-04-14")
+    ap.add_argument("--current", default="I_R", choices=sorted(CURRENT_UNITS),
+                    help="which current field to plot (I_R = one transverse mode; "
+                         "I_device = transverse-integrated device current)")
     args = ap.parse_args()
+    ISCALE, IUNIT = CURRENT_UNITS[args.current]
+    TAG = CURRENT_TAG[args.current]
     os.makedirs(args.out_dir, exist_ok=True)
 
-    data = {m: load_51pt(args.data_dir, m) for m in MOLS}
+    data = {m: load_51pt(args.data_dir, m, args.current) for m in MOLS}
     missing = [m for m, d in data.items() if d is None]
     if missing:
         raise SystemExit(f"missing 51-pt data for: {missing} in {args.data_dir}")
@@ -103,9 +129,9 @@ def main():
     fig, ax = plt.subplots(figsize=(8, 5))
     for i, m in enumerate(MOLS):
         V, I = data[m]
-        ax.plot(V * 1e3, I * 1e9, color=f"C{i}", label=IV_LABEL[m])
-    ax.set_title("I-V at 300 K (SCBA, Anderson mixing)")
-    ax.set_xlabel("Bias (mV)"); ax.set_ylabel("Current (nA)")
+        ax.plot(V * 1e3, I * ISCALE, color=f"C{i}", label=IV_LABEL[m])
+    ax.set_title(f"I-V at 300 K (SCBA, Anderson mixing) — {TAG}")
+    ax.set_xlabel("Bias (mV)"); ax.set_ylabel(f"Current ({IUNIT})")
     ax.legend(loc="upper left"); ax.grid(alpha=0.3)
     fig.tight_layout(); save(fig, "fig1_IV")
 
@@ -115,7 +141,7 @@ def main():
         V, I = data[m]
         Vc, d2 = numerical_d2(V, I)
         ax.plot(Vc * 1e3, d2, color=f"C{i}", label=IV_LABEL[m])
-    ax.set_title(r"Numerical $d^2I/dV^2$ at 300 K (SCBA)")
+    ax.set_title(f"Numerical $d^2I/dV^2$ at 300 K (SCBA) — {TAG}")
     ax.set_xlabel("Bias (mV)"); ax.set_ylabel(r"$d^2I/dV^2$ (A/V$^2$)")
     ax.legend(loc="upper left"); ax.grid(alpha=0.3)
     fig.tight_layout(); save(fig, "fig2_d2IdV2")
@@ -125,9 +151,9 @@ def main():
     fig, ax = plt.subplots(figsize=(8, 5))
     for i, m in enumerate(["Mol_A", "Mol_B", "Mol_AB"]):
         V, I = data[m]
-        ax.plot(V * 1e3, (I - Ib) * 1e9, color=f"C{i}", label=D_LABEL[m])
+        ax.plot(V * 1e3, (I - Ib) * ISCALE, color=f"C{i}", label=D_LABEL[m])
     ax.set_title("Current difference from Baseline (SCBA)")
-    ax.set_xlabel("Bias (mV)"); ax.set_ylabel(r"$\Delta$I (nA)")
+    ax.set_xlabel("Bias (mV)"); ax.set_ylabel(rf"$\Delta$I ({IUNIT})")
     ax.legend(loc="upper left"); ax.grid(alpha=0.3)
     fig.tight_layout(); save(fig, "fig3_deltaI")
 
@@ -145,7 +171,7 @@ def main():
 
     # Fig 5 — temperature dependence (Mol_A), 2-panel like paper Fig 4.
     # Same 51-pt grid + raw np.diff(I,2)/dV2 as Fig 3 (consistent, not analytic).
-    temp = {T: load_temp_51pt(args.data_dir, T) for T in TEMPS}
+    temp = {T: load_temp_51pt(args.data_dir, T, args.current) for T in TEMPS}
     miss_T = [T for T, d in temp.items() if d is None]
     if miss_T:
         print(f"[warn] fig5_temp skipped — missing 51-pt Mol_A data at T={miss_T}K "
@@ -154,11 +180,11 @@ def main():
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
         for i, T in enumerate(TEMPS):
             V, I = temp[T]
-            ax1.plot(V * 1e3, I * 1e9, color=f"C{i}", label=TEMP_LABEL[T])
+            ax1.plot(V * 1e3, I * ISCALE, color=f"C{i}", label=TEMP_LABEL[T])
             Vc, d2 = numerical_d2(V, I)
             ax2.plot(Vc * 1e3, d2, color=f"C{i}", label=TEMP_LABEL[T])
         ax1.set_title("Mol A: I-V vs Temperature")
-        ax1.set_xlabel("Bias (mV)"); ax1.set_ylabel("Current (nA)")
+        ax1.set_xlabel("Bias (mV)"); ax1.set_ylabel(f"Current ({IUNIT})")
         ax1.legend(loc="upper left"); ax1.grid(alpha=0.3)
         ax1.text(0.02, 0.98, "(a)", transform=ax1.transAxes, va="top", fontweight="bold")
         ax2.set_title(r"Mol A: numerical $d^2I/dV^2$ vs Temperature")
