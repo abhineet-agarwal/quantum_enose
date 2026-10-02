@@ -135,3 +135,34 @@ def test_finite_bias_no_spurious_contact_bending(coarse_setup):
         assert np.max(np.abs(sc.U[em_term] - V / 2.0)) < 0.10
     if col_term.sum() > 0:
         assert np.max(np.abs(sc.U[col_term] - (-V / 2.0))) < 0.10
+
+
+def test_density_grid_runs_scba_once(coarse_setup, monkeypatch):
+    """With density on its own grid the Poisson loop never reads the SCBA, so
+    it must run exactly once (the final solve) however many iterations the
+    loop takes. Same U and current as solving every iteration; ~10x faster."""
+    import core.poisson_negf as pn
+    from config.device_library import MATERIALS
+    from run.run_rank1_sweep import _M0
+    s = coarse_setup
+    calls = {"n": 0}
+    real = pn.run_rank1_keldysh_single_bias
+
+    def counting(**kw):
+        calls["n"] += 1
+        return real(**kw)
+
+    monkeypatch.setattr(pn, "run_rank1_keldysh_single_bias", counting)
+    sc = run_self_consistent_bias(
+        V=0.3, E_grid=s["E_grid"], H_z=s["H_z"], UB=s["UB"], t0=s["t0"],
+        Ef=s["Ef"], kT=s["kT"], chi_diag=s["chi_def"], D0_sq_per_mode=s["D0_sq"],
+        hnu_idx_per_mode=s["hnu_idx"], N_bose_per_mode=s["N_bose"],
+        chi_per_mode=s["chi_list"], eps_r=s["eps_r"], N_D=s["N_D"],
+        a_m=s["a_m"], density_prefactor=None, contact_mask=s["cmask"],
+        scba_max_iter=20, scba_mix=0.3, scba_tol=1e-4,
+        poisson_max_iter=4, poisson_tol=1e-9, bc_scheme="neumann",
+        density_mode="physical", m_eff_kg=MATERIALS["ZnO"]["m_eff"] * _M0,
+        density_E_grid=np.arange(-0.25, 0.5, 0.002))
+    assert sc.poisson_iters == 4
+    assert calls["n"] == 1
+    assert sc.result is not None and np.isfinite(sc.result.I_right)

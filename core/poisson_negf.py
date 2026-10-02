@@ -449,7 +449,14 @@ def run_self_consistent_bias(
         raise ValueError("density_mode='physical' requires m_eff_kg")
     mu_L, mu_R = Ef + V / 2.0, Ef - V / 2.0
 
-    def negf_and_density(U_profile):
+    def negf_and_density(U_profile, need_scba=True):
+        # With a separate density grid the loop's density is ballistic and the
+        # potential update never reads the SCBA result, so the SCBA is only
+        # needed once, at the converged U (identical U trajectory and result).
+        if density_mode == "physical" and density_E_grid is not None and not need_scba:
+            return None, ballistic_transverse_density(
+                density_E_grid, H_z, UB, U_profile, t0,
+                mu_L, mu_R, kT, m_eff_kg, a_m, eta)
         r = run_rank1_keldysh_single_bias(
             V=V, E_grid=E_grid, H_z=H_z, UB=UB, bias_profile=U_profile, t0=t0,
             Ef=Ef, kT=kT, chi_diag=chi_diag, D0_sq_per_mode=D0_sq_per_mode,
@@ -481,7 +488,7 @@ def run_self_consistent_bias(
     dU = np.inf
     it = 0
     for it in range(1, poisson_max_iter + 1):
-        res, n_q = negf_and_density(U)
+        res, n_q = negf_and_density(U, need_scba=False)
         # Thesis Eq 3.1 charge model assembled per-site:
         #   • deep emitter terminal: n_TF = Nc_FD · F_{1/2}((E_F+V/2 − U)/kT)
         #   • deep collector terminal: n_TF = Nc_FD · F_{1/2}((E_F−V/2 − U)/kT)
@@ -515,8 +522,9 @@ def run_self_consistent_bias(
         dU = float(np.max(np.abs(U_new - U)))
         U = U_new
         if verbose:
+            i_r = "   (no SCBA)  " if res is None else f"{res.I_right:+.3e}"
             print(f"    [poisson {it:2d}] step={dU*1e3:8.3f} meV  "
-                  f"I_R={res.I_right:+.3e} A  Umin={U.min():+.3f}  "
+                  f"I_R={i_r} A  Umin={U.min():+.3f}  "
                   f"n_well_max={n_e.max():.2e} m⁻³", flush=True)
         if dU < poisson_tol:
             converged = True
