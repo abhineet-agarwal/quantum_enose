@@ -197,6 +197,44 @@ def ballistic_transverse_density(
     return prefac * acc * dE / (2.0 * np.pi)
 
 
+def ballistic_transmission(E_grid: np.ndarray, H_z: np.ndarray, UB: np.ndarray,
+                           U_bias: np.ndarray, t0: float,
+                           eta: float = 1e-12) -> np.ndarray:
+    """Ballistic T(E) = Gamma_L Gamma_R |G^R[0, Np-1]|^2 from one banded solve
+    per energy, the same construction as :func:`ballistic_transverse_density`.
+
+    O(Np) per energy, so a converged self-consistent potential can be turned
+    into a current on a fine grid without forming (NE, Np, Np) arrays.
+    """
+    from scipy.linalg import solve_banded
+
+    Np = H_z.shape[0]
+    diag0 = np.diag(H_z).astype(complex)
+    ab = np.zeros((3, Np), dtype=complex)
+    ab[0, 1:] = t0
+    ab[2, :-1] = t0
+
+    def _sigma(E, u_edge, ub_edge):
+        ck = 1.0 - ((E + 1j * eta - u_edge - ub_edge) / (2.0 * t0))
+        return -t0 * np.exp(1j * np.arccos(ck))
+
+    T = np.zeros(len(E_grid))
+    eR = np.zeros(Np, dtype=complex)
+    eR[-1] = 1.0
+    for k, E in enumerate(E_grid):
+        sL = _sigma(E, U_bias[0], UB[0])
+        sR = _sigma(E, U_bias[-1], UB[-1])
+        d = (E + 1j * eta) - (diag0 + U_bias)
+        d[0] -= sL
+        d[-1] -= sR
+        ab[1, :] = d
+        gR = solve_banded((1, 1), ab, eR)          # column Np-1 of G^R
+        gam_L = float(np.real(1j * (sL - np.conj(sL))))
+        gam_R = float(np.real(1j * (sR - np.conj(sR))))
+        T[k] = gam_L * gam_R * abs(gR[0]) ** 2
+    return T
+
+
 def _F12_scalar(eta: float) -> float:
     if eta < -10.0:
         z = float(np.exp(eta))

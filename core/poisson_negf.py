@@ -343,6 +343,7 @@ def run_self_consistent_bias(
     density_E_grid: np.ndarray | None = None,
     m_eff_kg: float | None = None,
     U_init: np.ndarray | None = None,
+    final_scba: bool = True,
     verbose: bool = False,
 ) -> SelfConsistentResult:
     """Self-consistent Poisson–NEGF loop at a single applied bias ``V``
@@ -531,7 +532,9 @@ def run_self_consistent_bias(
             break
 
     # Final consistency solve so the returned observables match the returned U.
-    res, n_e = negf_and_density(U)
+    # final_scba=False (density on its own grid only) skips it: result is None
+    # and the caller works from U, e.g. a banded ballistic current.
+    res, n_e = negf_and_density(U, need_scba=final_scba)
 
     return SelfConsistentResult(
         result=res, U=U, n_e=n_e, poisson_iters=it,
