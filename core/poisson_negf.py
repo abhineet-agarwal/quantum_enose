@@ -344,6 +344,7 @@ def run_self_consistent_bias(
     m_eff_kg: float | None = None,
     U_init: np.ndarray | None = None,
     final_scba: bool = True,
+    density_offset: np.ndarray | None = None,
     verbose: bool = False,
 ) -> SelfConsistentResult:
     """Self-consistent Poisson–NEGF loop at a single applied bias ``V``
@@ -498,6 +499,10 @@ def run_self_consistent_bias(
         #   • terminals: −Nc_FD · F_{−1/2}(η)/kT (exact Fermi-Dirac derivative)
         #   • quantum region: −n_q/kT_screen (Boltzmann predictor — Newton's
         #     approximation; the fixed point is unaffected).
+        if density_offset is not None:
+            # held fixed through this loop; a caller-side outer iteration
+            # refreshes it (e.g. a scattering correction to the ballistic n)
+            n_q = np.maximum(n_q + density_offset, 0.0)
         n_e = n_q.copy()
         dn_dU = -n_q / kT_screen
         if em_fd is not None and em_fd.any():

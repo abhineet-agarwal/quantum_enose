@@ -168,7 +168,7 @@ def _bulk_chi(chi_mol, UB):
 
 
 def build_phonon_modes(molecule: str, dE: float, kT: float, chi_mol, NS, ND,
-                       UB=None, include_bulk: bool = True):
+                       UB=None, include_bulk: bool = True, bulk_mask=None):
     """Return (D0_sq, hnu_idx, N_bose, chi_default, chi_per_mode).
 
     The bulk ZnO LO phonon (72 meV, D²=0.1 eV², χ=1 in active region) is
@@ -179,6 +179,11 @@ def build_phonon_modes(molecule: str, dE: float, kT: float, chi_mol, NS, ND,
     Each phonon mode gets its own χ vector via chi_per_mode, since bulk
     (delocalized) and molecular (Gaussian) modes have different spatial
     profiles.
+
+    ``bulk_mask`` (bool per site) overrides the bulk χ region, e.g. to add the
+    undoped spacers, where the emitter accumulation layer sits. Keep the doped
+    leads out of it: scattering there clashes with the pristine semi-infinite
+    lead self-energies (Fix 7).
     """
     mol = MOLECULES[molecule]
     mol_modes_meV = mol.get("modes_meV", [])
@@ -192,7 +197,8 @@ def build_phonon_modes(molecule: str, dE: float, kT: float, chi_mol, NS, ND,
     # ~2 phonon-replica bias points.  Previous value 0.005 caused FBA
     # near-singular spikes at 30% of bias points.
     hnu_bulk_eV = 0.072
-    chi_bulk = _bulk_chi(chi_mol, UB)
+    chi_bulk = (_bulk_chi(chi_mol, UB) if bulk_mask is None
+                else np.asarray(bulk_mask, dtype=float))
     D0_sq = [0.001]  # eV² per site (see rationale above)
     hnu_idx = [int(round(hnu_bulk_eV / dE))]
     N_bose = [1.0 / (np.exp(hnu_bulk_eV / kT) - 1.0)]

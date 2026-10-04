@@ -47,9 +47,15 @@ kT = 0.02585 * T_K / 300.0
 m_eff = MATERIALS["ZnO"]["m_eff"] * _M0
 H_z, UB, t0, Np, z_nm, bounds = build_stack(DEVICE, A_M)
 eps_r, N_D, cmask = build_electrostatics(DEVICE, A_M)
-E_density = np.arange(-0.6, 0.5, DE_DENSITY)
-E_current = np.arange(-0.6, 0.5, DE_CURRENT)
-E_transport = np.arange(-0.6, 0.5 + 0.001, 0.002)   # unused without the final SCBA
+
+
+def energy_grids(V):
+    """Bias-aware grids: from 0.25 eV below the collector band edge (-V/2) to
+    14 kT above mu_L = Ef + V/2. A fixed top at 0.5 eV cuts the emitter
+    distribution off once V/2 + Ef approaches it (mu_L = 0.65 eV at 1.2 V)."""
+    lo, hi = -V / 2 - 0.25, EF + V / 2 + 14 * kT
+    return (np.arange(lo, hi, DE_DENSITY), np.arange(lo, hi, DE_CURRENT),
+            np.arange(lo, hi + 0.001, 0.002))
 area = float(np.prod(DEVICES[DEVICE]["transverse_size"]))
 well = np.where(UB > 0.5 * UB.max())[0]
 gaps = np.where(np.diff(well) > 1)[0]
@@ -58,6 +64,7 @@ well_sites = np.arange(well[gaps[0]] + 1, well[gaps[0] + 1])
 
 def solve(V, U_init):
     t = time.time()
+    E_density, E_current, E_transport = energy_grids(V)
     sc = run_self_consistent_bias(
         V=V, E_grid=E_transport, H_z=H_z, UB=UB, t0=t0, Ef=EF, kT=kT,
         chi_diag=np.zeros(Np), D0_sq_per_mode=[], hnu_idx_per_mode=[],
@@ -73,6 +80,7 @@ def solve(V, U_init):
     I_mode = landauer_current_1mode(E_current, T, mu_L, mu_R, kT)
     I_dev = tsu_esaki_current(E_current, T, mu_L, mu_R, kT, m_eff, area)
     return dict(U=sc.U, n=sc.n_e, it=sc.poisson_iters, conv=sc.poisson_converged,
+                E_lo=float(E_current[0]), E_hi=float(E_current[-1]),
                 dU=sc.dU_final, I_mode=I_mode, I_dev=I_dev, secs=time.time() - t,
                 U_well=float(sc.U[well_sites].mean()))
 
@@ -109,10 +117,10 @@ def run(path, V_list):
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "all"
-    V0, V1, dV = (float(x) for x in sys.argv[2:5]) if len(sys.argv) > 4 else (0.448, 0.768, 0.032)
+    V0, V1, dV = (float(x) for x in sys.argv[2:5]) if len(sys.argv) > 4 else (0.0, 1.2, 0.016)
     Vs = np.round(np.arange(V0, V1 + dV / 2, dV), 6)
     print(f"[setup] {DEVICE} Np={Np} Ef={EF*1e3:.1f} meV  density dE={DE_DENSITY*1e3:g} meV "
-          f"({E_density.size} pts)  tol={POISSON_TOL*1e3:g} meV  V={V0}-{V1} step {dV}", flush=True)
+          f"(bias-aware grid)  tol={POISSON_TOL*1e3:g} meV  V={V0}-{V1} step {dV}", flush=True)
     if mode in ("up", "all"):
         run("up", Vs)
     if mode in ("down", "all"):

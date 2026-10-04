@@ -893,3 +893,139 @@ def run_rank1_keldysh_single_bias_fast(
         I_left=I2 * dE * _IE_PREFACTOR, I_right=I1 * dE * _IE_PREFACTOR,
         iters_used=iters_used, converged=converged,
     )
+
+
+@dataclass
+class Rank1DiagResult:
+    """What :func:`run_rank1_keldysh_single_bias_lowmem` keeps: diagonals only."""
+    V: float
+    E_grid: np.ndarray
+    n_diag: np.ndarray      # (NE, Np)  Re diag G^<
+    p_diag: np.ndarray      # (NE, Np)  Re diag A - n (holes), as the fast solver uses
+    I_left: float
+    I_right: float
+    iters_used: int
+    converged: bool
+
+
+def run_rank1_keldysh_single_bias_lowmem(
+    *,
+    V: float,
+    E_grid: np.ndarray,
+    H_z: np.ndarray,
+    UB: np.ndarray,
+    bias_profile: np.ndarray,
+    t0: float,
+    Ef: float,
+    kT: float,
+    chi_diag: np.ndarray,
+    D0_sq_per_mode: Sequence[float],
+    hnu_idx_per_mode: Sequence[int],
+    N_bose_per_mode: Sequence[float],
+    chi_per_mode: Sequence[np.ndarray] | None = None,
+    max_iter: int = 200,
+    tol: float = 1e-5,
+    mix: float = 0.5,
+    eta: float = 1e-12,
+    anderson_depth: int = 8,
+    chunk: int = 64,
+) -> Rank1DiagResult:
+    """The SCBA of :func:`run_rank1_keldysh_single_bias_fast` in O(chunk * Np^2) memory.
+
+    The fast solver's loop already works on (NE, Np) diagonals, but it holds
+    every energy's (Np, Np) matrices at once (denominator, identity, G^R, |G|^2)
+    and materialises full G^< / G^> at the end: ~9.6 MB per energy at Np = 435,
+    so a 0.5 meV grid over a 0.6 eV window needs > 11 GB. Here each iteration
+    sweeps the energies in chunks and keeps only diagonals, and the result
+    carries only what the density and current need. Same arithmetic, same
+    Anderson mixing, same final pass.
+    """
+    Np = H_z.shape[0]
+    NE = E_grid.size
+    idx = np.arange(Np)
+    mu_L, mu_R = Ef + V / 2.0, Ef - V / 2.0
+    f_L = 1.0 / (1.0 + np.exp((E_grid - mu_L) / kT))
+    f_R = 1.0 / (1.0 + np.exp((E_grid - mu_R) / kT))
+
+    E_arr = np.asarray(E_grid, dtype=complex) + 1j * eta
+    U_bias = bias_profile
+    H_full = (H_z + np.diag(U_bias)).astype(complex)
+    ck_L = 1.0 - ((E_arr - U_bias[0] - UB[0]) / (2.0 * t0))
+    ck_R = 1.0 - ((E_arr - U_bias[-1] - UB[-1]) / (2.0 * t0))
+    sigL_c = -t0 * np.exp(1j * np.arccos(ck_L))
+    sigR_c = -t0 * np.exp(1j * np.arccos(ck_R))
+    gamL = 1j * (sigL_c - np.conj(sigL_c))      # Gamma_L(0,0), as contact_gammas
+    gamR = 1j * (sigR_c - np.conj(sigR_c))
+    si_c = np.zeros((NE, Np), dtype=complex); so_c = np.zeros((NE, Np), dtype=complex)
+    si_c[:, 0] += f_L * gamL; so_c[:, 0] += (1 - f_L) * gamL
+    si_c[:, -1] += f_R * gamR; so_c[:, -1] += (1 - f_R) * gamR
+
+    def sweep(si_ph, so_ph):
+        """Diagonals of G^<, G^> and G^R for the current phonon self-energy."""
+        Gl = np.empty((NE, Np), dtype=complex)
+        Gg = np.empty((NE, Np), dtype=complex)
+        GRd = np.empty((NE, Np), dtype=complex)
+        for a in range(0, NE, chunk):
+            b = min(a + chunk, NE)
+            M = np.broadcast_to(-H_full, (b - a, Np, Np)).copy()
+            M[:, idx, idx] += E_arr[a:b, None] + 0.5j * (si_ph[a:b] + so_ph[a:b])
+            M[:, 0, 0] -= sigL_c[a:b]
+            M[:, -1, -1] -= sigR_c[a:b]
+            G = _robust_solve(M, np.broadcast_to(np.eye(Np, dtype=complex), (b - a, Np, Np)))
+            GRd[a:b] = G[:, idx, idx]
+            G2 = np.abs(G); np.square(G2, out=G2)
+            Gl[a:b] = np.einsum("kzw,kw->kz", G2, si_c[a:b] + si_ph[a:b], optimize=True)
+            Gg[a:b] = np.einsum("kzw,kw->kz", G2, so_c[a:b] + so_ph[a:b], optimize=True)
+        return Gl, Gg, GRd
+
+    si_ph = np.zeros((NE, Np), dtype=complex)
+    so_ph = np.zeros((NE, Np), dtype=complex)
+    x_hist: list[np.ndarray] = []
+    r_hist: list[np.ndarray] = []
+    pack = lambda a, b: np.concatenate([a.real.ravel(), a.imag.ravel(), b.real.ravel(), b.imag.ravel()])
+
+    def unpack(v):
+        n = NE * Np
+        return ((v[:n] + 1j * v[n:2 * n]).reshape(NE, Np),
+                (v[2 * n:3 * n] + 1j * v[3 * n:]).reshape(NE, Np))
+
+    iters_used, converged = 0, False
+    for it in range(max_iter):
+        iters_used = it + 1
+        Gl, Gg, _ = sweep(si_ph, so_ph)
+        si_new, so_new = fba_phonon_sigma_diag(Gl, Gg, chi_diag, D0_sq_per_mode,
+                                               hnu_idx_per_mode, N_bose_per_mode, chi_per_mode)
+        change = ((float(np.sum(np.abs(si_new - si_ph))) + float(np.sum(np.abs(so_new - so_ph))))
+                  / max(float(np.sum(np.abs(si_ph))) + float(np.sum(np.abs(so_ph))), 1e-30))
+        x_vec, f_vec = pack(si_ph, so_ph), pack(si_new, so_new)
+        x_hist.append(x_vec); r_hist.append(f_vec - x_vec)
+        if len(x_hist) > anderson_depth:
+            x_hist.pop(0); r_hist.pop(0)
+        m = len(r_hist)
+        if m >= 2:
+            R = np.column_stack(r_hist)
+            A = np.zeros((m + 1, m + 1)); A[:m, :m] = R.T @ R + 1e-12 * np.eye(m)
+            A[:m, m] = 1.0; A[m, :m] = 1.0
+            bvec = np.zeros(m + 1); bvec[m] = 1.0
+            try:
+                coeffs = np.linalg.solve(A, bvec)[:m]
+            except np.linalg.LinAlgError:
+                coeffs = np.ones(m) / m
+            si_ph, so_ph = unpack(sum(c * (x + mix * r) for c, x, r in zip(coeffs, x_hist, r_hist)))
+        else:
+            si_ph = (1.0 - mix) * si_ph + mix * si_new
+            so_ph = (1.0 - mix) * so_ph + mix * so_new
+        if change < tol:
+            converged = True
+            break
+
+    # FINAL PASS, as in the fast solver: observables from the final Sigma.
+    Gl, Gg, GRd = sweep(si_ph, so_ph)
+    n = np.real(Gl)
+    p = np.real(1j * (GRd - np.conj(GRd))) - n
+    dE = E_grid[1] - E_grid[0]
+    I1 = float(np.sum(np.real(so_c[:, -1] * n[:, -1] - si_c[:, -1] * p[:, -1])))
+    I2 = float(np.sum(np.real(so_c[:, 0] * n[:, 0] - si_c[:, 0] * p[:, 0])))
+    return Rank1DiagResult(V=V, E_grid=E_grid, n_diag=n, p_diag=p,
+                           I_left=I2 * dE * _IE_PREFACTOR, I_right=I1 * dE * _IE_PREFACTOR,
+                           iters_used=iters_used, converged=converged)
