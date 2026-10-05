@@ -9,7 +9,7 @@ and adds scattering to the Poisson density by an outer iteration:
      dn(z) = n_window(z) * (n_SCBA(z) / n_ballistic(z) - 1), assuming each
      transverse slice changes by the same fraction;
   3. re-converge Poisson with the fine-grid ballistic density + dn;
-  4. repeat until the correction is self-consistent (5 %) and U has settled.
+  4. repeat until the correction changes by < 0.5 % of the window charge and U has settled.
 
 Bulk LO scattering acts on every undoped site (spacers, barriers, well); the
 doped leads stay out (Fix 7). If the two branches converge to the same U, the
@@ -113,8 +113,10 @@ if __name__ == "__main__":
         dn_new, n_win, I_s, conv, its, cons = correction(U)
         # Converged only when the correction is self-consistent, not merely
         # when the damped step is small (damping makes every step small).
-        resid = float(np.abs(dn_new - dn).sum() / max(np.abs(dn_new).sum(), 1e-300))
-        if resid < 0.05 and dU < OUTER_TOL:
+        # Measured against the charge in the window, not against the correction:
+        # a ~1 % correction wobbling by 0.3 % is converged for Poisson's purposes.
+        resid = float(np.abs(dn_new - dn).sum() / max(n_win.sum(), 1e-300))
+        if resid < 5e-3 and dU < OUTER_TOL:
             print(f"  outer {k}: correction self-consistent (residual {resid:.1%}), U settled", flush=True)
             break
         dn = OUTER_MIX * dn_new + (1.0 - OUTER_MIX) * dn

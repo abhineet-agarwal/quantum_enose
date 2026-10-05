@@ -902,6 +902,8 @@ class Rank1DiagResult:
     E_grid: np.ndarray
     n_diag: np.ndarray      # (NE, Np)  Re diag G^<
     p_diag: np.ndarray      # (NE, Np)  Re diag A - n (holes), as the fast solver uses
+    sigma_in_ph: np.ndarray   # (NE, Np)  converged phonon in/out-scattering, to
+    sigma_out_ph: np.ndarray  #           warm-start a nearby solve (sigma_init)
     I_left: float
     I_right: float
     iters_used: int
@@ -929,6 +931,7 @@ def run_rank1_keldysh_single_bias_lowmem(
     eta: float = 1e-12,
     anderson_depth: int = 8,
     chunk: int = 64,
+    sigma_init: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> Rank1DiagResult:
     """The SCBA of :func:`run_rank1_keldysh_single_bias_fast` in O(chunk * Np^2) memory.
 
@@ -939,6 +942,10 @@ def run_rank1_keldysh_single_bias_lowmem(
     sweeps the energies in chunks and keeps only diagonals, and the result
     carries only what the density and current need. Same arithmetic, same
     Anderson mixing, same final pass.
+
+    ``sigma_init`` = (sigma_in_ph, sigma_out_ph) from a previous result on the
+    same energy grid starts the iteration there instead of at zero, e.g. inside
+    an outer Poisson loop where U changes little between calls.
     """
     Np = H_z.shape[0]
     NE = E_grid.size
@@ -978,8 +985,12 @@ def run_rank1_keldysh_single_bias_lowmem(
             Gg[a:b] = np.einsum("kzw,kw->kz", G2, so_c[a:b] + so_ph[a:b], optimize=True)
         return Gl, Gg, GRd
 
-    si_ph = np.zeros((NE, Np), dtype=complex)
-    so_ph = np.zeros((NE, Np), dtype=complex)
+    if sigma_init is None:
+        si_ph = np.zeros((NE, Np), dtype=complex)
+        so_ph = np.zeros((NE, Np), dtype=complex)
+    else:
+        si_ph = np.array(sigma_init[0], dtype=complex)
+        so_ph = np.array(sigma_init[1], dtype=complex)
     x_hist: list[np.ndarray] = []
     r_hist: list[np.ndarray] = []
     pack = lambda a, b: np.concatenate([a.real.ravel(), a.imag.ravel(), b.real.ravel(), b.imag.ravel()])
@@ -1027,5 +1038,6 @@ def run_rank1_keldysh_single_bias_lowmem(
     I1 = float(np.sum(np.real(so_c[:, -1] * n[:, -1] - si_c[:, -1] * p[:, -1])))
     I2 = float(np.sum(np.real(so_c[:, 0] * n[:, 0] - si_c[:, 0] * p[:, 0])))
     return Rank1DiagResult(V=V, E_grid=E_grid, n_diag=n, p_diag=p,
+                           sigma_in_ph=si_ph, sigma_out_ph=so_ph,
                            I_left=I2 * dE * _IE_PREFACTOR, I_right=I1 * dE * _IE_PREFACTOR,
                            iters_used=iters_used, converged=converged)
