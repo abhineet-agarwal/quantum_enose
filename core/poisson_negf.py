@@ -345,6 +345,7 @@ def run_self_consistent_bias(
     U_init: np.ndarray | None = None,
     final_scba: bool = True,
     density_offset: np.ndarray | None = None,
+    density_correction=None,
     density_method: str = "banded",
     verbose: bool = False,
 ) -> SelfConsistentResult:
@@ -504,6 +505,11 @@ def run_self_consistent_bias(
             # held fixed through this loop; a caller-side outer iteration
             # refreshes it (e.g. a scattering correction to the ballistic n)
             n_q = np.maximum(n_q + density_offset, 0.0)
+        if density_correction is not None:
+            # callable(U) -> additive density, re-evaluated every step, so a
+            # correction defined relative to the ballistic density follows
+            # the potential instead of lagging it
+            n_q = np.maximum(n_q + density_correction(U), 0.0)
         n_e = n_q.copy()
         dn_dU = -n_q / kT_screen
         if em_fd is not None and em_fd.any():

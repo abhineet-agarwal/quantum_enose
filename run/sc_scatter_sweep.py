@@ -34,6 +34,12 @@ from run.run_rank1_sweep import build_phonon_modes, emitter_barrier_center_nm, g
 
 DE_SCBA = 0.0005
 OUTER_TOL_U, OUTER_TOL_RES, OUTER_MAX, OUTER_MIX = 5e-4, 5e-3, 15, 0.3
+# "offset": Poisson sees a fixed additive dn between outer iterations.
+# "ratio":  Poisson sees n_window(U) * (r - 1) with the per-site scattering
+#           ratio r fixed, so the ballistic part follows U inside the loop.
+# Same fixed point; near resonance the offset form overshot (U_well jumping
+# ~270 <-> ~370 meV at 1.15-1.22 V) because the absolute correction lags U.
+CORRECTION_MODE = "offset"
 
 z = np.arange(bc.Np) * 0.2
 REGIONS = {"emitter spacer": (z >= 30) & (z < 40),
@@ -81,12 +87,19 @@ def correction(V, U, ph, lo_margin, sigma_init):
                                          bc.t0, bc.EF + V / 2, bc.EF - V / 2, bc.kT, bc.m_eff,
                                          bc.A_M, 1e-12, method="rgf")
     ok = n_b > 1e-8 * n_b.max()
-    dn = n_win * (np.where(ok, n_s / np.where(ok, n_b, 1.0), 1.0) - 1.0)
+    ratio = np.where(ok, n_s / np.where(ok, n_b, 1.0), 1.0)
+    dn = n_win * (ratio - 1.0)
     cons = abs(rs.I_left + rs.I_right) / max(abs(rs.I_right), 1e-30)
-    return dn, n_win, rs, rb.I_right, cons
+    return dn, n_win, rs, rb.I_right, cons, ratio, E[0], E[-1]
 
 
-def poisson(V, U0, dn):
+def window_density(V, U, e_lo, e_hi):
+    return ballistic_transverse_density(np.arange(e_lo, e_hi, bc.DE_DENSITY), bc.H_z, bc.UB, U,
+                                        bc.t0, bc.EF + V / 2, bc.EF - V / 2, bc.kT, bc.m_eff,
+                                        bc.A_M, 1e-12, method="rgf")
+
+
+def poisson(V, U0, dn, correction_fn=None):
     E_density, E_current, E_transport = bc.energy_grids(V)
     sc = run_self_consistent_bias(
         V=V, E_grid=E_transport, H_z=bc.H_z, UB=bc.UB, t0=bc.t0, Ef=bc.EF, kT=bc.kT,
@@ -97,7 +110,8 @@ def poisson(V, U0, dn):
         poisson_max_iter=bc.POISSON_MAX_ITER, poisson_tol=bc.POISSON_TOL,
         kT_screen=0.002, bc_scheme="neumann", density_mode="physical",
         m_eff_kg=bc.m_eff, density_E_grid=E_density, U_init=U0, final_scba=False,
-        density_offset=dn, density_method="rgf")
+        density_offset=None if correction_fn is not None else dn,
+        density_correction=correction_fn, density_method="rgf")
     T = ballistic_transmission(E_current, bc.H_z, bc.UB, sc.U, bc.t0, method="rgf")
     mu_L, mu_R = bc.EF + V / 2, bc.EF - V / 2
     return (sc, landauer_current_1mode(E_current, T, mu_L, mu_R, bc.kT),
@@ -120,10 +134,14 @@ def align(sig, NE):
 def solve_bias(V, U, dn, ph, lo_margin, sigma_prev):
     sigma = align(sigma_prev, window(V, lo_margin).size)
     dU, hist = np.inf, []
+    r_mix = None
     for k in range(1, OUTER_MAX + 1):
         t = time.time()
-        dn_new, n_win, rs, I_b_win, cons = correction(V, U, ph, lo_margin, sigma)
+        dn_new, n_win, rs, I_b_win, cons, r_new, e_lo, e_hi = correction(V, U, ph, lo_margin, sigma)
         sigma = (rs.sigma_in_ph, rs.sigma_out_ph)
+        if CORRECTION_MODE == "ratio":
+            # the correction the current mixed ratio implies at this U
+            dn = n_win * ((r_mix if r_mix is not None else np.ones_like(r_new)) - 1.0)
         resid = float(np.abs(dn_new - dn).sum() / max(n_win.sum(), 1e-300))
         frac = {name: float(dn_new[m].sum() / max(n_win[m].sum(), 1e-300)) for name, m in REGIONS.items()}
         row = dict(k=k, resid=resid, I_scba_mode=rs.I_right, I_bal_win_mode=I_b_win,
@@ -131,8 +149,15 @@ def solve_bias(V, U, dn, ph, lo_margin, sigma_prev):
         if resid < OUTER_TOL_RES and dU < OUTER_TOL_U:
             hist.append(row)
             break
-        dn = OUTER_MIX * dn_new + (1.0 - OUTER_MIX) * dn
-        sc, I_bal, I_dev_bal = poisson(V, U, dn)
+        if CORRECTION_MODE == "ratio":
+            r_mix = r_new if r_mix is None else OUTER_MIX * r_new + (1.0 - OUTER_MIX) * r_mix
+            r_fixed = r_mix.copy()
+            corr_fn = lambda Uc, r=r_fixed: window_density(V, Uc, e_lo, e_hi) * (r - 1.0)
+            sc, I_bal, I_dev_bal = poisson(V, U, None, correction_fn=corr_fn)
+            dn = corr_fn(sc.U)
+        else:
+            dn = OUTER_MIX * dn_new + (1.0 - OUTER_MIX) * dn
+            sc, I_bal, I_dev_bal = poisson(V, U, dn)
         dU = float(np.max(np.abs(sc.U - U)))
         U = sc.U
         row.update(dU=dU, poisson_iters=sc.poisson_iters, poisson_conv=sc.poisson_converged,
@@ -149,6 +174,45 @@ def solve_bias(V, U, dn, ph, lo_margin, sigma_prev):
     final = dict(I_R=rf.I_right, I_L=rf.I_left, I_mode=0.5 * (rf.I_right - rf.I_left),
                  I_err=0.5 * abs(rf.I_right + rf.I_left), iters=rf.iters_used, conv=rf.converged)
     return U, dn, sigma, hist, converged, I_bal, I_dev_bal, final
+
+
+def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-4, poisson_tol=1e-4):
+    """Scattering density recomputed inside every Poisson step (no outer loop).
+
+    The offset correction lagged U and overshot near resonance; holding the
+    per-site ratio fixed amplified errors where scattering changes the charge
+    most (ratio ~6 in the well): from a converged 1184 mV state it moved U by
+    106 meV in one step. Here the windowed SCBA is re-solved at each U
+    (warm-started, RGF, ~0.1-0.3 s), so Poisson sees the actual n(U).
+    """
+    E = window(V, lo_margin)
+    state = {"sigma": align(sigma_prev, E.size), "calls": 0, "scba_iters": 0, "last": None}
+
+    def corr(Uc):
+        rb = scba(V, Uc, E, (None,) * 5)
+        rs = scba(V, Uc, E, ph, state["sigma"], tol=scba_tol, max_iter=200)
+        state["sigma"] = (rs.sigma_in_ph, rs.sigma_out_ph)
+        state["calls"] += 1; state["scba_iters"] += rs.iters_used; state["last"] = rs
+        n_b = rb.n_diag.sum(0) * DE_SCBA / (2 * np.pi)
+        n_s = rs.n_diag.sum(0) * DE_SCBA / (2 * np.pi)
+        ok = n_b > 1e-8 * n_b.max()
+        r = np.where(ok, n_s / np.where(ok, n_b, 1.0), 1.0)
+        return window_density(V, Uc, E[0], E[-1]) * (r - 1.0)
+
+    t = time.time()
+    tol_saved = bc.POISSON_TOL
+    bc.POISSON_TOL = poisson_tol          # SCBA tol sets a floor on n(U) reproducibility
+    try:
+        sc, I_bal, I_dev_bal = poisson(V, U, None, correction_fn=corr)
+    finally:
+        bc.POISSON_TOL = tol_saved
+    rf = scba(V, sc.U, E, ph, state["sigma"], tol=1e-5, max_iter=300)
+    final = dict(I_R=rf.I_right, I_L=rf.I_left, I_mode=0.5 * (rf.I_right - rf.I_left),
+                 I_err=0.5 * abs(rf.I_right + rf.I_left), iters=rf.iters_used, conv=rf.converged)
+    info = dict(poisson_iters=sc.poisson_iters, poisson_conv=sc.poisson_converged,
+                dU_final=sc.dU_final, corr_calls=state["calls"], scba_iters=state["scba_iters"],
+                secs=time.time() - t)
+    return sc.U, corr(sc.U), (rf.sigma_in_ph, rf.sigma_out_ph), info, final, I_bal, I_dev_bal
 
 
 def main():
