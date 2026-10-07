@@ -110,6 +110,48 @@ def physical_transverse_density(
 _GL_X, _GL_W = np.polynomial.laguerre.laggauss(64)
 
 
+def _rgf_contact_columns(E, H_z, UB, U_bias, t0, eta):
+    """For a chunk of energies: |G^R[z,0]|^2, |G^R[z,Np-1]|^2, Gamma_L, Gamma_R.
+
+    Recursive Green's functions on the tridiagonal chain (hopping -t0), all
+    energies at once: with right/left-connected g^R, g^L,
+        |G[z,0]|^2    = |G_00|^2 prod_{k=1..z} |t0 g^R_k|^2,
+        |G[z,Np-1]|^2 = |G_nn|^2 prod_{k=z..n-1} |t0 g^L_k|^2,
+    the same columns the banded solves in ballistic_transverse_density give.
+    """
+    Np = H_z.shape[0]
+    Ec = np.asarray(E, dtype=float)[:, None] + 1j * eta
+    sig = lambda u, ub: -t0 * np.exp(1j * np.arccos(1.0 - (Ec[:, 0] - u - ub) / (2.0 * t0)))
+    sL, sR = sig(U_bias[0], UB[0]), sig(U_bias[-1], UB[-1])
+    a = Ec - (np.diag(H_z) + U_bias)[None, :]
+    a = a.astype(complex)
+    a[:, 0] -= sL
+    a[:, -1] -= sR
+    h2 = t0 * t0
+    n = Np - 1
+    gR = np.empty(a.shape, dtype=complex); gL = np.empty(a.shape, dtype=complex)
+    gR[:, n] = 1.0 / a[:, n]
+    for k in range(n - 1, -1, -1):
+        gR[:, k] = 1.0 / (a[:, k] - h2 * gR[:, k + 1])
+    gL[:, 0] = 1.0 / a[:, 0]
+    for k in range(1, Np):
+        gL[:, k] = 1.0 / (a[:, k] - h2 * gL[:, k - 1])
+    G00 = 1.0 / (a[:, 0] - h2 * gR[:, 1])
+    Gnn = 1.0 / (a[:, n] - h2 * gL[:, n - 1])
+    cL = np.empty(a.shape); cR = np.empty(a.shape)
+    cL[:, 0] = np.abs(G00) ** 2
+    qR = np.abs(t0 * gR) ** 2
+    for z in range(1, Np):
+        cL[:, z] = cL[:, z - 1] * qR[:, z]
+    cR[:, n] = np.abs(Gnn) ** 2
+    qL = np.abs(t0 * gL) ** 2
+    for z in range(n - 1, -1, -1):
+        cR[:, z] = cR[:, z + 1] * qL[:, z]
+    gam_L = np.real(1j * (sL - np.conj(sL)))
+    gam_R = np.real(1j * (sR - np.conj(sR)))
+    return cL, cR, gam_L, gam_R
+
+
 def ballistic_transverse_density(
     E_grid: np.ndarray,
     H_z: np.ndarray,
@@ -122,6 +164,8 @@ def ballistic_transverse_density(
     m_eff_kg: float,
     a_m: float,
     eta: float = 1e-12,
+    method: str = "banded",
+    chunk: int = 2048,
 ) -> np.ndarray:
     """Transverse-integrated density from a BANDED ballistic solve.
 
@@ -155,9 +199,29 @@ def ballistic_transverse_density(
 
     Parameters mirror :func:`physical_transverse_density`, with the Hamiltonian
     given directly (``H_z``, ``UB``, ``U_bias``, ``t0``) instead of a
-    precomputed Green's function.
+    precomputed Green's function. ``method="rgf"`` computes the same two
+    columns by recursive Green's functions vectorised over energies (in
+    ``chunk``-sized blocks) instead of two banded solves per energy in a
+    Python loop -- same result, much faster on fine grids.
     """
     from scipy.linalg import solve_banded
+
+    def _supply_of(E, mu):
+        x = (mu - E) / kT
+        return np.where(x > 30.0, x, np.log1p(np.exp(np.clip(x, -600.0, 30.0))))
+
+    if method == "rgf":
+        acc = np.zeros(H_z.shape[0])
+        for i in range(0, len(E_grid), chunk):
+            E = np.asarray(E_grid[i:i + chunk], dtype=float)
+            cL, cR, gL_, gR_ = _rgf_contact_columns(E, H_z, UB, U_bias, t0, eta)
+            acc += ((gL_ * _supply_of(E, mu_L))[:, None] * cL
+                    + (gR_ * _supply_of(E, mu_R))[:, None] * cR).sum(0)
+        dE = float(E_grid[1] - E_grid[0])
+        prefac = 2.0 * m_eff_kg * (kT * _Q) / (2.0 * np.pi * _HBAR ** 2 * a_m)
+        return prefac * acc * dE / (2.0 * np.pi)
+    if method != "banded":
+        raise ValueError(f"method must be 'banded' or 'rgf', not {method!r}")
 
     Np = H_z.shape[0]
     diag0 = np.diag(H_z).astype(complex)          # 2 t0 + UB
@@ -199,7 +263,8 @@ def ballistic_transverse_density(
 
 def ballistic_transmission(E_grid: np.ndarray, H_z: np.ndarray, UB: np.ndarray,
                            U_bias: np.ndarray, t0: float,
-                           eta: float = 1e-12) -> np.ndarray:
+                           eta: float = 1e-12, method: str = "banded",
+                           chunk: int = 2048) -> np.ndarray:
     """Ballistic T(E) = Gamma_L Gamma_R |G^R[0, Np-1]|^2 from one banded solve
     per energy, the same construction as :func:`ballistic_transverse_density`.
 
@@ -207,6 +272,15 @@ def ballistic_transmission(E_grid: np.ndarray, H_z: np.ndarray, UB: np.ndarray,
     into a current on a fine grid without forming (NE, Np, Np) arrays.
     """
     from scipy.linalg import solve_banded
+
+    if method == "rgf":
+        out = []
+        for i in range(0, len(E_grid), chunk):
+            cL, _, gL_, gR_ = _rgf_contact_columns(E_grid[i:i + chunk], H_z, UB, U_bias, t0, eta)
+            out.append(gL_ * gR_ * cL[:, -1])       # Gamma_L Gamma_R |G[Np-1, 0]|^2
+        return np.concatenate(out)
+    if method != "banded":
+        raise ValueError(f"method must be 'banded' or 'rgf', not {method!r}")
 
     Np = H_z.shape[0]
     diag0 = np.diag(H_z).astype(complex)

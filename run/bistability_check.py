@@ -74,8 +74,8 @@ def solve(V, U_init):
         poisson_max_iter=POISSON_MAX_ITER, poisson_tol=POISSON_TOL,
         kT_screen=0.002, bc_scheme="neumann", density_mode="physical",
         m_eff_kg=m_eff, density_E_grid=E_density, U_init=U_init,
-        final_scba=False)
-    T = ballistic_transmission(E_current, H_z, UB, sc.U, t0)
+        final_scba=False, density_method="rgf")
+    T = ballistic_transmission(E_current, H_z, UB, sc.U, t0, method="rgf")
     mu_L, mu_R = EF + V / 2, EF - V / 2
     I_mode = landauer_current_1mode(E_current, T, mu_L, mu_R, kT)
     I_dev = tsu_esaki_current(E_current, T, mu_L, mu_R, kT, m_eff, area)

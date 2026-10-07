@@ -40,3 +40,21 @@ def test_lowmem_warm_start_reaches_same_answer():
     assert cold.converged and warm.converged
     assert warm.iters_used <= 2 < cold.iters_used
     assert abs(warm.I_right / cold.I_right - 1) < 1e-6
+
+
+def test_rgf_matches_dense():
+    """Recursive Green's functions give the dense solver's diagonals."""
+    a_m, dE, kT = 0.5e-9, 0.004, 0.02585
+    H, UB, t0, Np, z, b = build_stack("ZnO_MgZnO_symmetric", a_m)
+    chi = gaussian_chi(z, emitter_barrier_center_nm(b), 0.3)
+    D0, hi, Nb, chd, chl = build_phonon_modes("Mol_A", dE, kT, chi, 1, 1, UB=UB)
+    kw = dict(V=0.4, E_grid=np.arange(-0.1, 0.5, dE), H_z=H, UB=UB,
+              bias_profile=linear_bias_profile(0.4, Np, 1, 1), t0=t0, Ef=0.02, kT=kT,
+              chi_diag=chd, D0_sq_per_mode=D0, hnu_idx_per_mode=hi, N_bose_per_mode=Nb,
+              chi_per_mode=chl, max_iter=60, tol=1e-6, mix=0.3, anderson_depth=0)
+    d = run_rank1_keldysh_single_bias_lowmem(method="dense", **kw)
+    r = run_rank1_keldysh_single_bias_lowmem(method="rgf", **kw)
+    assert r.iters_used == d.iters_used
+    assert np.abs(r.n_diag - d.n_diag).max() <= 1e-10 * np.abs(d.n_diag).max()
+    assert abs(r.I_right / d.I_right - 1) < 1e-10
+    assert abs(r.I_left / d.I_left - 1) < 1e-10

@@ -932,6 +932,7 @@ def run_rank1_keldysh_single_bias_lowmem(
     anderson_depth: int = 8,
     chunk: int = 64,
     sigma_init: tuple[np.ndarray, np.ndarray] | None = None,
+    method: str = "dense",
 ) -> Rank1DiagResult:
     """The SCBA of :func:`run_rank1_keldysh_single_bias_fast` in O(chunk * Np^2) memory.
 
@@ -946,6 +947,11 @@ def run_rank1_keldysh_single_bias_lowmem(
     ``sigma_init`` = (sigma_in_ph, sigma_out_ph) from a previous result on the
     same energy grid starts the iteration there instead of at zero, e.g. inside
     an outer Poisson loop where U changes little between calls.
+
+    ``method="rgf"`` gets the same diagonals by recursive Green's functions,
+    O(Np) per energy instead of a dense O(Np^3) solve (~100x at Np = 435).
+    It needs a tridiagonal Hamiltonian with one hopping value, which
+    build_stack produces; every self-energy here is diagonal.
     """
     Np = H_z.shape[0]
     NE = E_grid.size
@@ -967,7 +973,7 @@ def run_rank1_keldysh_single_bias_lowmem(
     si_c[:, 0] += f_L * gamL; so_c[:, 0] += (1 - f_L) * gamL
     si_c[:, -1] += f_R * gamR; so_c[:, -1] += (1 - f_R) * gamR
 
-    def sweep(si_ph, so_ph):
+    def sweep_dense(si_ph, so_ph):
         """Diagonals of G^<, G^> and G^R for the current phonon self-energy."""
         Gl = np.empty((NE, Np), dtype=complex)
         Gg = np.empty((NE, Np), dtype=complex)
@@ -984,6 +990,59 @@ def run_rank1_keldysh_single_bias_lowmem(
             Gl[a:b] = np.einsum("kzw,kw->kz", G2, si_c[a:b] + si_ph[a:b], optimize=True)
             Gg[a:b] = np.einsum("kzw,kw->kz", G2, so_c[a:b] + so_ph[a:b], optimize=True)
         return Gl, Gg, GRd
+
+    hop = -float(H_z[0, 1])                    # M = E - H - Sigma has off-diagonal +hop
+    if method == "rgf" and not (np.allclose(np.diag(H_z, 1), -hop) and np.allclose(H_z, H_z.T)
+                                and np.count_nonzero(np.triu(H_z, 2)) == 0):
+        raise ValueError("method='rgf' needs a symmetric tridiagonal H with one hopping value")
+    h_d = np.diag(H_full)
+
+    def sweep_rgf(si_ph, so_ph):
+        """Same diagonals as sweep_dense, by recursion along the chain.
+
+        M = E - H - Sigma is complex symmetric and tridiagonal (hopping +hop),
+        with right/left-connected g^R_k = 1/(a_k - hop^2 g^R_{k+1}) etc., so
+            G_kk = 1 / (a_k - hop^2 g^L_{k-1} - hop^2 g^R_{k+1}),
+            G_zw = G_zz prod_{k=z+1..w} (-hop g^R_k)   (z < w),  G_wz = G_zw.
+        With q_k = |hop g^R_k|^2, sum_w |G_zw|^2 s_w splits into
+            |G_zz|^2 (s_z + S_z) + T_z,
+            S_z = q_{z+1} (s_{z+1} + S_{z+1}),   T_z = q_z (T_{z-1} + |G_{z-1}|^2 s_{z-1}),
+        two O(Np) recursions instead of forming |G|^2.
+        """
+        a = E_arr[:, None] - h_d[None, :] + 0.5j * (si_ph + so_ph)
+        a[:, 0] -= sigL_c
+        a[:, -1] -= sigR_c
+        h2 = hop * hop
+        gR = np.empty((NE, Np), dtype=complex); gL = np.empty((NE, Np), dtype=complex)
+        gR[:, -1] = 1.0 / a[:, -1]
+        for k in range(Np - 2, -1, -1):
+            gR[:, k] = 1.0 / (a[:, k] - h2 * gR[:, k + 1])
+        gL[:, 0] = 1.0 / a[:, 0]
+        for k in range(1, Np):
+            gL[:, k] = 1.0 / (a[:, k] - h2 * gL[:, k - 1])
+        dl = np.zeros((NE, Np), dtype=complex); dr = np.zeros((NE, Np), dtype=complex)
+        dl[:, 1:] = h2 * gL[:, :-1]
+        dr[:, :-1] = h2 * gR[:, 1:]
+        GRd = 1.0 / (a - dl - dr)
+        G2 = np.abs(GRd) ** 2
+        q = np.abs(hop * gR) ** 2
+
+        def contract(src):
+            S = np.zeros((NE, Np)); T = np.zeros((NE, Np))
+            for z in range(Np - 2, -1, -1):
+                S[:, z] = q[:, z + 1] * (src[:, z + 1] + S[:, z + 1])
+            for z in range(1, Np):
+                T[:, z] = q[:, z] * (T[:, z - 1] + G2[:, z - 1] * src[:, z - 1])
+            return G2 * (src + S) + T
+
+        # in/out-scattering rates are real (Gamma * f, D^2 * occupation)
+        Gl = contract(np.real(si_c + si_ph)).astype(complex)
+        Gg = contract(np.real(so_c + so_ph)).astype(complex)
+        return Gl, Gg, GRd
+
+    if method not in ("dense", "rgf"):
+        raise ValueError(f"method must be 'dense' or 'rgf', not {method!r}")
+    sweep = sweep_rgf if method == "rgf" else sweep_dense
 
     if sigma_init is None:
         si_ph = np.zeros((NE, Np), dtype=complex)

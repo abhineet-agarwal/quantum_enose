@@ -52,15 +52,22 @@ def window(V, lo_margin):
     return np.arange(V / 2 - lo_margin, bc.EF + V / 2 + 12 * bc.kT, DE_SCBA)
 
 
-def scba(V, U, E, ph, sigma_init=None):
+def scba(V, U, E, ph, sigma_init=None, tol=1e-3, max_iter=60):
     D0, hi, Nb, chd, chl = ph
     on = D0 is not None
     return run_rank1_keldysh_single_bias_lowmem(
         V=V, E_grid=E, H_z=bc.H_z, UB=bc.UB, bias_profile=U, t0=bc.t0, Ef=bc.EF, kT=bc.kT,
         chi_diag=chd if on else np.zeros(bc.Np), D0_sq_per_mode=D0 if on else [],
         hnu_idx_per_mode=hi if on else [], N_bose_per_mode=Nb if on else [],
-        chi_per_mode=chl if on else None, max_iter=150, tol=1e-4, mix=0.3, eta=1e-12,
-        sigma_init=sigma_init)
+        # Inexact inner solves: the outer loop is the fixed point that matters,
+        # and the warm start carries progress between outer iterations. At
+        # D2 = 0.015 a 1e-4 tolerance ran 150 iterations without settling;
+        # a 1e-3 change in Sigma moves the density correction by ~0.1 %.
+        # Linear mixing: Anderson/DIIS returns wrong-sign, unconverged currents
+        # at D2 >= 0.01 (finding-patil-gamma-anderson); at 0.015 it gave
+        # -0.08 nA at 320 mV where linear mixing converges to +0.22 nA.
+        chi_per_mode=chl if on else None, max_iter=max_iter, tol=tol, mix=0.3, eta=1e-12,
+        sigma_init=sigma_init, anderson_depth=0, method="rgf")
 
 
 def correction(V, U, ph, lo_margin, sigma_init):
@@ -72,7 +79,7 @@ def correction(V, U, ph, lo_margin, sigma_init):
     n_s = rs.n_diag.sum(0) * DE_SCBA / (2 * np.pi)
     n_win = ballistic_transverse_density(np.arange(E[0], E[-1], bc.DE_DENSITY), bc.H_z, bc.UB, U,
                                          bc.t0, bc.EF + V / 2, bc.EF - V / 2, bc.kT, bc.m_eff,
-                                         bc.A_M, 1e-12)
+                                         bc.A_M, 1e-12, method="rgf")
     ok = n_b > 1e-8 * n_b.max()
     dn = n_win * (np.where(ok, n_s / np.where(ok, n_b, 1.0), 1.0) - 1.0)
     cons = abs(rs.I_left + rs.I_right) / max(abs(rs.I_right), 1e-30)
@@ -90,8 +97,8 @@ def poisson(V, U0, dn):
         poisson_max_iter=bc.POISSON_MAX_ITER, poisson_tol=bc.POISSON_TOL,
         kT_screen=0.002, bc_scheme="neumann", density_mode="physical",
         m_eff_kg=bc.m_eff, density_E_grid=E_density, U_init=U0, final_scba=False,
-        density_offset=dn)
-    T = ballistic_transmission(E_current, bc.H_z, bc.UB, sc.U, bc.t0)
+        density_offset=dn, density_method="rgf")
+    T = ballistic_transmission(E_current, bc.H_z, bc.UB, sc.U, bc.t0, method="rgf")
     mu_L, mu_R = bc.EF + V / 2, bc.EF - V / 2
     return (sc, landauer_current_1mode(E_current, T, mu_L, mu_R, bc.kT),
             tsu_esaki_current(E_current, T, mu_L, mu_R, bc.kT, bc.m_eff, bc.area))
@@ -136,7 +143,12 @@ def solve_bias(V, U, dn, ph, lo_margin, sigma_prev):
               f"I_SCBA {rs.I_right*1e9:8.3f} nA  SCBA {rs.iters_used} it cons {cons:.0e}  "
               f"Poisson {sc.poisson_iters} it{'' if sc.poisson_converged else ' NC'}  [{row['secs']:.0f}s]", flush=True)
     converged = hist[-1]["resid"] < OUTER_TOL_RES and dU < OUTER_TOL_U
-    return U, dn, sigma, hist, converged, I_bal, I_dev_bal
+    # The density correction tolerates a loose inner solve; the current does
+    # not: off resonance it is a small difference of large contact flows.
+    rf = scba(V, U, window(V, lo_margin), ph, sigma, tol=1e-5, max_iter=300)
+    final = dict(I_R=rf.I_right, I_L=rf.I_left, I_mode=0.5 * (rf.I_right - rf.I_left),
+                 I_err=0.5 * abs(rf.I_right + rf.I_left), iters=rf.iters_used, conv=rf.converged)
+    return U, dn, sigma, hist, converged, I_bal, I_dev_bal, final
 
 
 def main():
@@ -163,16 +175,18 @@ def main():
             dn = np.zeros(bc.Np)
         t = time.time()
         print(f"  V = {V*1e3:.0f} mV", flush=True)
-        U, dn, sigma, hist, conv, I_bal, I_dev_bal = solve_bias(float(V), U, dn, ph, lo_margin, sigma)
+        U, dn, sigma, hist, conv, I_bal, I_dev_bal, final = solve_bias(float(V), U, dn, ph, lo_margin, sigma)
         last = hist[-1]
-        ratio = last["I_scba_mode"] / max(last["I_bal_win_mode"], 1e-30)
+        ratio = final["I_mode"] / max(last["I_bal_win_mode"], 1e-30)
         db[key] = dict(V=float(V), U=U, dn=dn, hist=hist, converged=conv,
-                       U_well=float(U[bc.well_sites].mean()), I_scba_mode=last["I_scba_mode"],
+                       U_well=float(U[bc.well_sites].mean()), I_scba_mode=final["I_mode"],
+                       I_scba_err=final["I_err"], final_scba=final,
                        I_bal_mode=I_bal, I_dev_bal=I_dev_bal, I_dev_scba_est=I_dev_bal * ratio,
                        D2=D2, lo_margin=lo_margin, secs=time.time() - t)
         np.savez(out, **{k: np.array(v, dtype=object) for k, v in db.items()})
         print(f"  V = {V*1e3:.0f} mV {'converged' if conv else 'NOT converged'} in {len(hist)} outer: "
-              f"U_well {db[key]['U_well']*1e3:+.2f} meV  I_SCBA {last['I_scba_mode']*1e9:.3f} nA/mode  "
+              f"U_well {db[key]['U_well']*1e3:+.2f} meV  I_SCBA {final['I_mode']*1e9:.3f} "
+              f"+- {final['I_err']*1e9:.3f} nA/mode (final solve {final['iters']} it{'' if final['conv'] else ' NC'})  "
               f"I_dev~{db[key]['I_dev_scba_est']*1e3:.2f} mA  [{db[key]['secs']/60:.1f} min]", flush=True)
     print("[done]", flush=True)
 
