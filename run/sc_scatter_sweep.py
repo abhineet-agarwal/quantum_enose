@@ -47,9 +47,11 @@ REGIONS = {"emitter spacer": (z >= 30) & (z < 40),
            "collector spacer": (z >= 47) & (z < 57)}
 
 
-def phonons(D2):
+def phonons(D2, molecule="Baseline"):
+    """Bulk LO on every undoped site at D2, plus the molecule's own modes
+    (Gaussian chi at the emitter barrier, coupling from the database)."""
     chi_mol = gaussian_chi(z, emitter_barrier_center_nm(bc.build_stack(bc.DEVICE, bc.A_M)[5]), 0.3)
-    D0, hi, Nb, chd, chl = build_phonon_modes("Baseline", DE_SCBA, bc.kT, chi_mol, 1, 1,
+    D0, hi, Nb, chd, chl = build_phonon_modes(molecule, DE_SCBA, bc.kT, chi_mol, 1, 1,
                                               UB=bc.UB, bulk_mask=~bc.cmask)
     return (D2,) + tuple(D0[1:]), hi, Nb, chd, chl
 
@@ -176,7 +178,8 @@ def solve_bias(V, U, dn, ph, lo_margin, sigma_prev):
     return U, dn, sigma, hist, converged, I_bal, I_dev_bal, final
 
 
-def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-4, poisson_tol=1e-4):
+def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-4, poisson_tol=1e-4,
+                       final_tol=1e-5, final_max_iter=300):
     """Scattering density recomputed inside every Poisson step (no outer loop).
 
     The offset correction lagged U and overshot near resonance; holding the
@@ -206,7 +209,7 @@ def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-4, poisson_t
         sc, I_bal, I_dev_bal = poisson(V, U, None, correction_fn=corr)
     finally:
         bc.POISSON_TOL = tol_saved
-    rf = scba(V, sc.U, E, ph, state["sigma"], tol=1e-5, max_iter=300)
+    rf = scba(V, sc.U, E, ph, state["sigma"], tol=final_tol, max_iter=final_max_iter)
     final = dict(I_R=rf.I_right, I_L=rf.I_left, I_mode=0.5 * (rf.I_right - rf.I_left),
                  I_err=0.5 * abs(rf.I_right + rf.I_left), iters=rf.iters_used, conv=rf.converged)
     info = dict(poisson_iters=sc.poisson_iters, poisson_conv=sc.poisson_converged,
