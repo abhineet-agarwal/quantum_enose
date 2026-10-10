@@ -346,6 +346,10 @@ def run_self_consistent_bias(
     final_scba: bool = True,
     density_offset: np.ndarray | None = None,
     density_correction=None,
+    poisson_anderson: int = 0,
+    poisson_newton: bool = False,
+    jacobian_dE: float = 0.001,
+    newton_step_cap: float = 0.05,
     density_method: str = "banded",
     verbose: bool = False,
 ) -> SelfConsistentResult:
@@ -487,6 +491,9 @@ def run_self_consistent_bias(
         return r, n
 
     res: Rank1KeldyshResult | None = None
+    hist_U: list[np.ndarray] = []
+    hist_r: list[np.ndarray] = []
+    best_dU = np.inf
     n_e = np.zeros(Np)
     converged = False
     dU = np.inf
@@ -524,6 +531,21 @@ def run_self_consistent_bias(
             fmh = fermi_dirac_minus_half(eta_col)
             n_e[col_fd] = Nc_FD * f12
             dn_dU[col_fd] = -Nc_FD * fmh / kT
+        if poisson_newton:
+            # True Newton: exact ballistic density response dn_z/dU_w (on a
+            # coarser energy grid; only the step direction depends on it), the
+            # exact Fermi-Dirac derivative on the terminal rows. Converges
+            # quadratically, so the final step size measures the error -- the
+            # damped predictor's 0.01 meV step left U 0.3 meV off at 960 mV.
+            from core.poisson import ballistic_density_jacobian
+            Ej = np.arange(density_E_grid[0], density_E_grid[-1], jacobian_dE)
+            Jfull = ballistic_density_jacobian(Ej, H_z, UB, U, t0, mu_L, mu_R, kT,
+                                               m_eff_kg, a_m, eta)
+            for msk in (em_fd, col_fd):
+                if msk is not None and msk.any():
+                    Jfull[msk, :] = 0.0
+                    Jfull[msk, msk] = dn_dU[msk]
+            dn_dU = Jfull
         # Thesis Eq 3.50–3.53: Newton-Raphson Poisson step with the assembled
         # per-site charge and Jacobian; outer Dirichlet clamp on each contact.
         U_new = poisson_newton_update(
@@ -533,7 +555,31 @@ def run_self_consistent_bias(
             right_bc=right_bc,
         )
         dU = float(np.max(np.abs(U_new - U)))
-        U = U_new
+        if poisson_newton and dU > newton_step_cap:
+            U_new = U + (U_new - U) * (newton_step_cap / dU)     # guard near resonance
+        if poisson_anderson > 0:
+            # Anderson acceleration of the fixed point U -> U_new: the damped
+            # predictor stalls and bounces (~0.5 meV steps at 32 mV, coupled
+            # scattering) when the density responds sharply to U. Every stored
+            # iterate meets the Dirichlet values, so the combination does too.
+            r = U_new - U
+            if dU > 10.0 * best_dU:                    # diverging: drop the history
+                hist_U.clear(); hist_r.clear()
+            best_dU = min(best_dU, dU)
+            hist_U.append(U.copy()); hist_r.append(r)
+            if len(hist_U) > poisson_anderson + 1:
+                hist_U.pop(0); hist_r.pop(0)
+            if len(hist_r) >= 2:
+                dR = np.column_stack([hist_r[i + 1] - hist_r[i] for i in range(len(hist_r) - 1)])
+                dX = np.column_stack([hist_U[i + 1] - hist_U[i] for i in range(len(hist_U) - 1)])
+                gamma = np.linalg.lstsq(dR, r, rcond=1e-10)[0]
+                U_acc = U_new - (dX + dR) @ gamma
+                # an accelerated step far beyond the plain one is not trusted
+                U = U_acc if np.max(np.abs(U_acc - U)) < 5.0 * dU + 1e-3 else U_new
+            else:
+                U = U_new
+        else:
+            U = U_new
         if verbose:
             i_r = "   (no SCBA)  " if res is None else f"{res.I_right:+.3e}"
             print(f"    [poisson {it:2d}] step={dU*1e3:8.3f} meV  "

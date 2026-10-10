@@ -309,6 +309,70 @@ def ballistic_transmission(E_grid: np.ndarray, H_z: np.ndarray, UB: np.ndarray,
     return T
 
 
+def ballistic_density_jacobian(E_grid, H_z, UB, U_bias, t0, mu_L, mu_R, kT,
+                               m_eff_kg, a_m, eta=1e-12, chunk=64):
+    """d n_z / d U_w of :func:`ballistic_transverse_density`, for a Newton step.
+
+    M = E - H - U - Sigma, so dG/dU_w = G e_w e_w^T G and
+        dn_z/dU_w = pref sum_E sum_c Gamma_c sup_c 2 Re[conj(G_zc) G_zw G_wc],
+    c the two contact sites. The full G per energy comes from the recursive
+    form G_zw = G_zz prod_{k=z+1..w} (-t0 g^R_k) (z <= w, G symmetric); any
+    energy where that is not finite falls back to a dense inverse. The lead
+    self-energies' own dependence on U at the end sites is neglected (they are
+    Dirichlet-pinned or zero-field), which only makes the Newton step inexact.
+    Cost O(NE Np^2): pass a coarser E_grid than the density's own.
+    """
+    Np = H_z.shape[0]
+    n = Np - 1
+    h2 = t0 * t0
+    E_all = np.asarray(E_grid, dtype=float)
+
+    def _supply_of(E, mu):
+        x = (mu - E) / kT
+        return np.where(x > 30.0, x, np.log1p(np.exp(np.clip(x, -600.0, 30.0))))
+
+    J = np.zeros((Np, Np))
+    for i0 in range(0, E_all.size, chunk):
+        E = E_all[i0:i0 + chunk]
+        Ec = E[:, None] + 1j * eta
+        sig = lambda u, ub: -t0 * np.exp(1j * np.arccos(1.0 - (Ec[:, 0] - u - ub) / (2.0 * t0)))
+        sL, sR = sig(U_bias[0], UB[0]), sig(U_bias[-1], UB[-1])
+        a = (Ec - (np.diag(H_z) + U_bias)[None, :]).astype(complex)
+        a[:, 0] -= sL; a[:, -1] -= sR
+        gR = np.empty(a.shape, dtype=complex); gL = np.empty(a.shape, dtype=complex)
+        gR[:, n] = 1.0 / a[:, n]
+        for k in range(n - 1, -1, -1):
+            gR[:, k] = 1.0 / (a[:, k] - h2 * gR[:, k + 1])
+        gL[:, 0] = 1.0 / a[:, 0]
+        for k in range(1, Np):
+            gL[:, k] = 1.0 / (a[:, k] - h2 * gL[:, k - 1])
+        dl = np.zeros_like(a); dr = np.zeros_like(a)
+        dl[:, 1:] = h2 * gL[:, :-1]; dr[:, :-1] = h2 * gR[:, 1:]
+        Gd = 1.0 / (a - dl - dr)
+        logf = np.zeros_like(a)
+        logf[:, 1:] = np.log(-t0 * gR[:, 1:])
+        C = np.cumsum(logf, axis=1)                                  # C_w = sum_{k<=w}
+        upper = np.triu(np.ones((Np, Np), dtype=bool))
+        with np.errstate(over="ignore", invalid="ignore"):
+            Gup = Gd[:, :, None] * np.exp(C[:, None, :] - C[:, :, None])  # valid for w >= z
+        Gup = np.where(upper[None], Gup, 0.0)
+        G = Gup + np.transpose(Gup, (0, 2, 1))
+        G[:, np.arange(Np), np.arange(Np)] = Gd                      # diagonal counted once
+        bad = ~np.isfinite(G).all(axis=(1, 2))
+        for k in np.where(bad)[0]:                                   # rare: dense fallback
+            M = np.diag(a[k]) + t0 * (np.eye(Np, k=1) + np.eye(Np, k=-1))
+            G[k] = np.linalg.inv(M)
+        gamL = np.real(1j * (sL - np.conj(sL))) * _supply_of(E, mu_L)
+        gamR = np.real(1j * (sR - np.conj(sR))) * _supply_of(E, mu_R)
+        for col, w in ((0, gamL), (n, gamR)):
+            g = G[:, :, col]                                         # G_zc = G_cz
+            J += np.einsum("e,ezw->zw", w,
+                           2.0 * np.real(np.conj(g)[:, :, None] * G * g[:, None, :]))
+    dE = float(E_all[1] - E_all[0])
+    prefac = 2.0 * m_eff_kg * (kT * _Q) / (2.0 * np.pi * _HBAR ** 2 * a_m)
+    return prefac * J * dE / (2.0 * np.pi)
+
+
 def _F12_scalar(eta: float) -> float:
     if eta < -10.0:
         z = float(np.exp(eta))
@@ -536,8 +600,11 @@ def poisson_newton_update(
     eps = eps_r * _EPS0
     inv_a2 = 1.0 / (a_m * a_m)
     rho = _Q * (N_D - n_e)           # C/m³
+    full = None                      # full (Np, Np) density response -> true Newton
     if dn_dU_override is not None:
         dn_dU = np.asarray(dn_dU_override, dtype=float)
+        if dn_dU.ndim == 2:
+            full, dn_dU = dn_dU, np.zeros(Np)
     else:
         dn_dU = -n_e / kT_screen     # Boltzmann predictor (m⁻³ / V, ≤ 0)
     if left_bc not in ("dirichlet", "neumann") or right_bc not in ("dirichlet", "neumann"):
@@ -586,6 +653,14 @@ def poisson_newton_update(
             J[i, i - 1] = cL
             J[i, i] = -(cL + cR) + _Q * dn_dU[i]
             J[i, i + 1] = cR
+    if full is not None:
+        # q dn_i/dU_j on every non-pinned row; Neumann half-cells at half weight
+        w = np.where(fixed, 0.0, 1.0)
+        if left_bc == "neumann":
+            w[0] *= 0.5
+        if right_bc == "neumann":
+            w[-1] *= 0.5
+        J += _Q * w[:, None] * full
     delta = np.linalg.solve(J, -F)
     return U_old + delta
 

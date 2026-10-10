@@ -40,6 +40,8 @@ OUTER_TOL_U, OUTER_TOL_RES, OUTER_MAX, OUTER_MIX = 5e-4, 5e-3, 15, 0.3
 # Same fixed point; near resonance the offset form overshot (U_well jumping
 # ~270 <-> ~370 meV at 1.15-1.22 V) because the absolute correction lags U.
 CORRECTION_MODE = "offset"
+POISSON_ANDERSON = 0          # depth of Anderson acceleration on U (0 = plain predictor)
+POISSON_NEWTON = False        # true Newton with the exact ballistic density Jacobian
 
 z = np.arange(bc.Np) * 0.2
 REGIONS = {"emitter spacer": (z >= 30) & (z < 40),
@@ -113,7 +115,8 @@ def poisson(V, U0, dn, correction_fn=None):
         kT_screen=0.002, bc_scheme="neumann", density_mode="physical",
         m_eff_kg=bc.m_eff, density_E_grid=E_density, U_init=U0, final_scba=False,
         density_offset=None if correction_fn is not None else dn,
-        density_correction=correction_fn, density_method="rgf")
+        density_correction=correction_fn, density_method="rgf",
+        poisson_anderson=POISSON_ANDERSON, poisson_newton=POISSON_NEWTON)
     T = ballistic_transmission(E_current, bc.H_z, bc.UB, sc.U, bc.t0, method="rgf")
     mu_L, mu_R = bc.EF + V / 2, bc.EF - V / 2
     return (sc, landauer_current_1mode(E_current, T, mu_L, mu_R, bc.kT),
