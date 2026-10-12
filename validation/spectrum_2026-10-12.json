@@ -1,0 +1,578 @@
+{
+  "status": "complete",
+  "passed": false,
+  "scope": "selected fixed-potential stencils; single transverse mode per spin",
+  "settings": {
+    "device": "ZnO_MgZnO_symmetric",
+    "molecules": [
+      "Mol_A"
+    ],
+    "centers": [
+      0.56
+    ],
+    "energy_steps": [
+      0.002,
+      0.0005,
+      0.0001
+    ],
+    "bias_steps": [
+      0.016,
+      0.008
+    ],
+    "E_min": -0.25,
+    "E_max": 0.5,
+    "T": 300.0,
+    "Ef": 0.02,
+    "donor_density": null,
+    "scba_tol": 1e-07,
+    "scba_max_iter": 500,
+    "rtol": 0.05,
+    "delta_I_atol": 1e-13,
+    "delta_D_atol": 1e-10,
+    "output": "results/validation_2026-10-12/spectrum.json",
+    "quiet": false,
+    "Ef_used": 0.02
+  },
+  "currents": [
+    {
+      "dE": 0.002,
+      "molecule": "Baseline",
+      "V": 0.544,
+      "I_L": -6.461032328239385e-08,
+      "I_R": 6.461031085839037e-08,
+      "scba_converged": true,
+      "iters": 77,
+      "conservation_abs_A": 1.2424003481692407e-14,
+      "conservation_rel": 1.922913065670717e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.002,
+      "molecule": "Baseline",
+      "V": 0.552,
+      "I_L": -7.174081078226021e-08,
+      "I_R": 7.174080430863288e-08,
+      "scba_converged": true,
+      "iters": 62,
+      "conservation_abs_A": 6.473627335128591e-15,
+      "conservation_rel": 9.02363280333788e-08,
+      "current_valid": true
+    },
+    {
+      "dE": 0.002,
+      "molecule": "Baseline",
+      "V": 0.56,
+      "I_L": -6.897284970487264e-08,
+      "I_R": 6.897284302078034e-08,
+      "scba_converged": true,
+      "iters": 80,
+      "conservation_abs_A": 6.684092298215497e-15,
+      "conservation_rel": 9.690903488569785e-08,
+      "current_valid": true
+    },
+    {
+      "dE": 0.002,
+      "molecule": "Baseline",
+      "V": 0.568,
+      "I_L": -6.945530646801259e-08,
+      "I_R": 6.945529759387325e-08,
+      "scba_converged": true,
+      "iters": 98,
+      "conservation_abs_A": 8.874139340840478e-15,
+      "conservation_rel": 1.2776762197323878e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.002,
+      "molecule": "Baseline",
+      "V": 0.576,
+      "I_L": -6.68492968186375e-08,
+      "I_R": 6.684929052906108e-08,
+      "scba_converged": true,
+      "iters": 95,
+      "conservation_abs_A": 6.289576419522431e-15,
+      "conservation_rel": 9.408590245288721e-08,
+      "current_valid": true
+    },
+    {
+      "dE": 0.002,
+      "molecule": "Mol_A",
+      "V": 0.544,
+      "I_L": -6.522759859360533e-08,
+      "I_R": 6.522760636682969e-08,
+      "scba_converged": true,
+      "iters": 45,
+      "conservation_abs_A": 7.773224361272699e-15,
+      "conservation_rel": 1.1917077437361906e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.002,
+      "molecule": "Mol_A",
+      "V": 0.552,
+      "I_L": -7.308324413258253e-08,
+      "I_R": 7.308321304011613e-08,
+      "scba_converged": true,
+      "iters": 43,
+      "conservation_abs_A": 3.109246639796487e-14,
+      "conservation_rel": 4.2543905606542434e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.002,
+      "molecule": "Mol_A",
+      "V": 0.56,
+      "I_L": -6.939611759397403e-08,
+      "I_R": 6.939611749929965e-08,
+      "scba_converged": true,
+      "iters": 46,
+      "conservation_abs_A": 9.467438129205045e-17,
+      "conservation_rel": 1.3642604885474377e-09,
+      "current_valid": true
+    },
+    {
+      "dE": 0.002,
+      "molecule": "Mol_A",
+      "V": 0.568,
+      "I_L": -7.002167479853065e-08,
+      "I_R": 7.002166178179385e-08,
+      "scba_converged": true,
+      "iters": 71,
+      "conservation_abs_A": 1.3016736796155343e-14,
+      "conservation_rel": 1.8589582202378982e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.002,
+      "molecule": "Mol_A",
+      "V": 0.576,
+      "I_L": -6.744262286100422e-08,
+      "I_R": 6.744261208234251e-08,
+      "scba_converged": true,
+      "iters": 65,
+      "conservation_abs_A": 1.0778661714871622e-14,
+      "conservation_rel": 1.5981972909158486e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Baseline",
+      "V": 0.544,
+      "I_L": -6.435663881250723e-08,
+      "I_R": 6.435665804340181e-08,
+      "scba_converged": true,
+      "iters": 89,
+      "conservation_abs_A": 1.9230894579959443e-14,
+      "conservation_rel": 2.9881748314199634e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Baseline",
+      "V": 0.552,
+      "I_L": -6.820952702232721e-08,
+      "I_R": 6.820954840932976e-08,
+      "scba_converged": true,
+      "iters": 95,
+      "conservation_abs_A": 2.1387002547635162e-14,
+      "conservation_rel": 3.135485140480688e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Baseline",
+      "V": 0.56,
+      "I_L": -6.90506768969052e-08,
+      "I_R": 6.905067814985659e-08,
+      "scba_converged": true,
+      "iters": 71,
+      "conservation_abs_A": 1.2529513849599564e-15,
+      "conservation_rel": 1.8145388554197113e-08,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Baseline",
+      "V": 0.568,
+      "I_L": -6.947896871397352e-08,
+      "I_R": 6.947897199834138e-08,
+      "scba_converged": true,
+      "iters": 61,
+      "conservation_abs_A": 3.2843678574634956e-15,
+      "conservation_rel": 4.7271393962793535e-08,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Baseline",
+      "V": 0.576,
+      "I_L": -6.711800826622536e-08,
+      "I_R": 6.711799665435277e-08,
+      "scba_converged": true,
+      "iters": 112,
+      "conservation_abs_A": 1.161187259320417e-14,
+      "conservation_rel": 1.7300681133363446e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Mol_A",
+      "V": 0.544,
+      "I_L": -6.479538132530452e-08,
+      "I_R": 6.479535538434101e-08,
+      "scba_converged": true,
+      "iters": 81,
+      "conservation_abs_A": 2.5940963512547768e-14,
+      "conservation_rel": 4.003520464261401e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Mol_A",
+      "V": 0.552,
+      "I_L": -6.886607198826192e-08,
+      "I_R": 6.886611745449034e-08,
+      "scba_converged": true,
+      "iters": 53,
+      "conservation_abs_A": 4.5466228418813454e-14,
+      "conservation_rel": 6.602118734058076e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Mol_A",
+      "V": 0.56,
+      "I_L": -6.949824831193095e-08,
+      "I_R": 6.949825341776236e-08,
+      "scba_converged": true,
+      "iters": 65,
+      "conservation_abs_A": 5.105831411531634e-15,
+      "conservation_rel": 7.346704644273385e-08,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Mol_A",
+      "V": 0.568,
+      "I_L": -7.003763622243156e-08,
+      "I_R": 7.003765028709246e-08,
+      "scba_converged": true,
+      "iters": 51,
+      "conservation_abs_A": 1.406466089161708e-14,
+      "conservation_rel": 2.0081571603222557e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Mol_A",
+      "V": 0.576,
+      "I_L": -6.788583115787557e-08,
+      "I_R": 6.788585112919847e-08,
+      "scba_converged": true,
+      "iters": 46,
+      "conservation_abs_A": 1.9971322898617853e-14,
+      "conservation_rel": 2.941897695384121e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Baseline",
+      "V": 0.544,
+      "I_L": -6.437793307256033e-08,
+      "I_R": 6.437794043178173e-08,
+      "scba_converged": true,
+      "iters": 53,
+      "conservation_abs_A": 7.359221404367085e-15,
+      "conservation_rel": 1.1431278097759751e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Baseline",
+      "V": 0.552,
+      "I_L": -6.754533514717163e-08,
+      "I_R": 6.754535370982474e-08,
+      "scba_converged": true,
+      "iters": 93,
+      "conservation_abs_A": 1.8562653108983564e-14,
+      "conservation_rel": 2.748176164526259e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Baseline",
+      "V": 0.56,
+      "I_L": -6.962104362956041e-08,
+      "I_R": 6.96210292881572e-08,
+      "scba_converged": true,
+      "iters": 66,
+      "conservation_abs_A": 1.434140320497643e-14,
+      "conservation_rel": 2.0599236175321007e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Baseline",
+      "V": 0.568,
+      "I_L": -6.991637320506073e-08,
+      "I_R": 6.991635871758829e-08,
+      "scba_converged": true,
+      "iters": 257,
+      "conservation_abs_A": 1.4487472435308768e-14,
+      "conservation_rel": 2.0721144091410234e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Baseline",
+      "V": 0.576,
+      "I_L": -6.842278206304115e-08,
+      "I_R": 6.842278022134482e-08,
+      "scba_converged": true,
+      "iters": 68,
+      "conservation_abs_A": 1.8416963256767368e-15,
+      "conservation_rel": 2.691641979684332e-08,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Mol_A",
+      "V": 0.544,
+      "I_L": -6.482777909799821e-08,
+      "I_R": 6.482779122809057e-08,
+      "scba_converged": true,
+      "iters": 49,
+      "conservation_abs_A": 1.2130092353122695e-14,
+      "conservation_rel": 1.8711253496890079e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Mol_A",
+      "V": 0.552,
+      "I_L": -6.815086229826027e-08,
+      "I_R": 6.815083452002188e-08,
+      "scba_converged": true,
+      "iters": 65,
+      "conservation_abs_A": 2.7778238392414286e-14,
+      "conservation_rel": 4.0759922113448295e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Mol_A",
+      "V": 0.56,
+      "I_L": -7.013780185986623e-08,
+      "I_R": 7.01377956887582e-08,
+      "scba_converged": true,
+      "iters": 71,
+      "conservation_abs_A": 6.17110803570906e-15,
+      "conservation_rel": 8.798547818819296e-08,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Mol_A",
+      "V": 0.568,
+      "I_L": -7.069202359519679e-08,
+      "I_R": 7.069199957698458e-08,
+      "scba_converged": true,
+      "iters": 51,
+      "conservation_abs_A": 2.4018212208633213e-14,
+      "conservation_rel": 3.397584478012473e-07,
+      "current_valid": true
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Mol_A",
+      "V": 0.576,
+      "I_L": -6.91663982732655e-08,
+      "I_R": 6.91664251653109e-08,
+      "scba_converged": true,
+      "iters": 95,
+      "conservation_abs_A": 2.6892045404707635e-14,
+      "conservation_rel": 3.888020139892213e-07,
+      "current_valid": true
+    }
+  ],
+  "spectra": [
+    {
+      "dE": 0.002,
+      "molecule": "Mol_A",
+      "center": 0.56,
+      "dV": 0.016,
+      "delta_I_A": [
+        6.172955084393182e-10,
+        4.232744785193037e-10,
+        5.933215532814286e-10
+      ],
+      "delta_D_A_V2": 1.4221410339146071e-06
+    },
+    {
+      "dE": 0.002,
+      "molecule": "Mol_A",
+      "center": 0.56,
+      "dV": 0.008,
+      "delta_I_A": [
+        1.3424087314832511e-09,
+        4.232744785193037e-10,
+        5.663641879206023e-10
+      ],
+      "delta_D_A_V2": 1.659724941195697e-05
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Mol_A",
+      "center": 0.56,
+      "dV": 0.016,
+      "delta_I_A": [
+        4.3869734093919936e-10,
+        4.475752679057731e-10,
+        7.678544748457012e-10
+      ],
+      "delta_D_A_V2": 1.2164112498959154e-06
+    },
+    {
+      "dE": 0.0005,
+      "molecule": "Mol_A",
+      "center": 0.56,
+      "dV": 0.008,
+      "delta_I_A": [
+        6.565690451605828e-10,
+        4.475752679057731e-10,
+        5.586782887510785e-10
+      ],
+      "delta_D_A_V2": 5.001512470314297e-06
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Mol_A",
+      "center": 0.56,
+      "dV": 0.016,
+      "delta_I_A": [
+        4.4985079630883504e-10,
+        5.16766400600992e-10,
+        7.436449439660765e-10
+      ],
+      "delta_D_A_V2": 6.248552307536235e-07
+    },
+    {
+      "dE": 0.0001,
+      "molecule": "Mol_A",
+      "center": 0.56,
+      "dV": 0.008,
+      "delta_I_A": [
+        6.05480810197144e-10,
+        5.16766400600992e-10,
+        7.756408593962906e-10
+      ],
+      "delta_D_A_V2": 5.431076068616418e-06
+    }
+  ],
+  "checks": [
+    {
+      "kind": "energy",
+      "molecule": "Mol_A",
+      "center": 0.56,
+      "coarse": {
+        "dE": 0.0005,
+        "molecule": "Mol_A",
+        "center": 0.56,
+        "dV": 0.016,
+        "delta_I_A": [
+          4.3869734093919936e-10,
+          4.475752679057731e-10,
+          7.678544748457012e-10
+        ],
+        "delta_D_A_V2": 1.2164112498959154e-06
+      },
+      "fine": {
+        "dE": 0.0001,
+        "molecule": "Mol_A",
+        "center": 0.56,
+        "dV": 0.016,
+        "delta_I_A": [
+          4.4985079630883504e-10,
+          5.16766400600992e-10,
+          7.436449439660765e-10
+        ],
+        "delta_D_A_V2": 6.248552307536235e-07
+      },
+      "delta_I_passed": false,
+      "delta_D_passed": false,
+      "passed": false
+    },
+    {
+      "kind": "energy",
+      "molecule": "Mol_A",
+      "center": 0.56,
+      "coarse": {
+        "dE": 0.0005,
+        "molecule": "Mol_A",
+        "center": 0.56,
+        "dV": 0.008,
+        "delta_I_A": [
+          6.565690451605828e-10,
+          4.475752679057731e-10,
+          5.586782887510785e-10
+        ],
+        "delta_D_A_V2": 5.001512470314297e-06
+      },
+      "fine": {
+        "dE": 0.0001,
+        "molecule": "Mol_A",
+        "center": 0.56,
+        "dV": 0.008,
+        "delta_I_A": [
+          6.05480810197144e-10,
+          5.16766400600992e-10,
+          7.756408593962906e-10
+        ],
+        "delta_D_A_V2": 5.431076068616418e-06
+      },
+      "delta_I_passed": false,
+      "delta_D_passed": false,
+      "passed": false
+    },
+    {
+      "kind": "bias",
+      "molecule": "Mol_A",
+      "center": 0.56,
+      "coarse": {
+        "dE": 0.0001,
+        "molecule": "Mol_A",
+        "center": 0.56,
+        "dV": 0.016,
+        "delta_I_A": [
+          4.4985079630883504e-10,
+          5.16766400600992e-10,
+          7.436449439660765e-10
+        ],
+        "delta_D_A_V2": 6.248552307536235e-07
+      },
+      "fine": {
+        "dE": 0.0001,
+        "molecule": "Mol_A",
+        "center": 0.56,
+        "dV": 0.008,
+        "delta_I_A": [
+          6.05480810197144e-10,
+          5.16766400600992e-10,
+          7.756408593962906e-10
+        ],
+        "delta_D_A_V2": 5.431076068616418e-06
+      },
+      "delta_I_passed": true,
+      "delta_D_passed": false,
+      "passed": false
+    }
+  ],
+  "untested": [
+    "energy-window extent",
+    "spatial grid",
+    "transverse coupling/integration",
+    "other biases",
+    "electrostatic model",
+    "experimental detectability"
+  ]
+}

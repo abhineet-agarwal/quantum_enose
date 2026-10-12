@@ -1,23 +1,14 @@
-"""
-Dense V-grid rank-1 projected SCBA sweep — SISPAD primary run (2026-04-09).
+"""Single-transverse-mode, local 1D NEGF-SCBA sweeps.
 
-Runs the rank-1 Keldysh wrapper at every bias on Patil's symmetric-bias grid
-for the ZnO/Mg0.3Zn0.7O asymmetric stack. Produces I_L(V), I_R(V), and the
-analytic d²I_R/dV²(V) per-molecule.
+I_L/I_R are per mode per spin, not whole-pixel currents. --transverse integrates
+independent channels; it does not implement localized intermode scattering.
+The historical filename tag 'rank1scba' is retained for data compatibility.
+SCBA/conservation checks do not establish spectral grid convergence; use
+run/check_spectrum_convergence.py before interpreting molecular derivatives.
 
-Methodology: docs/METHOD_DERIVATION.md (sections 1-7).
-Parameters:
-    - Device : ZnO_MgZnO_asymmetric (SISPAD primary)
-    - Solver : rank-1 projected SCBA (Nm=1, single longitudinal mode)
-    - V      : 0 → 0.4 V, 201 points
-    - E      : dE=2 meV, grid -0.25 → 0.5 eV (376 points)
-    - T      : 300 K  (kT = 0.02585 eV)
-    - Bulk   : ZnO LO phonon ℏω = 72 meV, D² = 0.1 eV² (χ ≡ 1)
-    - Mol    : Gaussian χ(z) with σ_mol = 3 Å centered on emitter barrier
-    - Area   : A_⊥ = (10 µm)² applied to I as final "Fix A" prefactor
-    - SCBA   : max_iter=10, mix=0.4, tol=1e-5
-
-Output: results/YYYY-MM-DD/iets_ZnO_MgZnO_asymmetric_<mol>_0-400mV_300K_rank1scba_<date>.npz
+Usage:
+  python run/run_rank1_sweep.py --device ZnO_MgZnO_symmetric --molecules Mol_A
+  python run/run_rank1_sweep.py --T 77 --donor-density 5.03636495047155e24
 """
 from __future__ import annotations
 
@@ -34,6 +25,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from config.device_library import DEVICES, MATERIALS, get_band_offset
 from config.molecular_database import MOLECULES
 from core.iets_analytic import analytic_d2idv2_inelastic_at_bias
+from core.poisson import bulk_electron_density, fermi_level_from_density
+from core.validation import current_diagnostics
 from core.scba_rank1_keldysh import (
     coherent_transmission,
     landauer_current_1mode,
@@ -232,12 +225,12 @@ def run_sweep(
     Ef: float = 0.02,
     eta: float = 1e-12,
     sigma_mol_nm: float = 0.3,
-    scba_max_iter: int = 10,
-    scba_mix: float = 0.4,
-    scba_tol: float = 1e-5,
+    scba_max_iter: int = 500,
+    scba_mix: float = 0.3,
+    scba_tol: float = 1e-7,
     use_poisson: bool = False,
-    poisson_max_iter: int = 40,
-    poisson_tol: float = 5e-3,
+    poisson_max_iter: int = 1000,
+    poisson_tol: float = 1e-5,
     poisson_kT_screen: float = 0.002,
     poisson_bc: str = "clamp",
     density_prefactor_scale: float = 1.0,
@@ -251,11 +244,33 @@ def run_sweep(
     # the default stays on the reference path that the bit-exact SISPAD
     # reproduction was verified against.
     fast_solver: bool = False,
+    donor_density: float | None = None,
+    allow_unconverged: bool = False,
     out_dir: str | None = None,
     verbose: bool = True,
 ):
     kT = 0.02585 * (T_K / 300.0)
     a_m = a_nm * 1e-9
+    if T_K <= 0 or dE <= 0 or V_points < 3 or V_max <= V_min:
+        raise ValueError("Require T > 0, dE > 0, at least three biases and V_max > V_min")
+    m_eff_kg = MATERIALS["ZnO"]["m_eff"] * _M0
+    if donor_density is not None:
+        Ef = fermi_level_from_density(donor_density, kT, m_eff_kg)
+    # Resolve output before expensive solves. Refuse collisions, including
+    # same-day parameter changes that have the same historical filename.
+    date = _dt.date.today().isoformat()
+    out_dir = out_dir or os.path.join("results", date)
+    tag = "poisson" if use_poisson else ("flatband" if flat_band_contacts else "rank1scba")
+    if use_poisson and density_mode == "physical":
+        tag += "-physdens"
+    if use_poisson and density_prefactor_scale != 1.0:
+        tag += f"-C{density_prefactor_scale:g}".replace(".", "p")
+    out_path = os.path.join(out_dir,
+        f"iets_{device}_{molecule}_{int(V_min*1000)}-{int(V_max*1000)}mV_"
+        f"{int(T_K)}K_{tag}_{date}.npz")
+    if os.path.exists(out_path):
+        raise FileExistsError(f"Preserving existing results: {out_path}; choose a fresh --out-dir")
+    os.makedirs(out_dir, exist_ok=True)
 
     # Energy-grid floor. Under bias the collector band edge sits at −V_max/2, so
     # the occupied collector band (and the lower edge of the transport window,
@@ -299,6 +314,8 @@ def run_sweep(
         _, _, contact_mask = build_electrostatics(device, a_m)
     if use_poisson:
         eps_r, N_D, contact_mask = build_electrostatics(device, a_m)
+        if donor_density is not None:
+            N_D *= donor_density / N_D[contact_mask].max()
         assert eps_r.size == Np, "electrostatics grid misaligned with H_z grid"
         density_prefactor = compute_density_prefactor(
             E_grid=E_grid, H_z=H_z, UB=UB, t0=t0, Ef=Ef, kT=kT,
@@ -317,13 +334,12 @@ def run_sweep(
     # Anchor the Poisson donor density to the equilibrium physical density in the
     # deep contact (charge neutrality without a fit constant); this is the doping
     # the model's Fermi level actually supports.
-    m_eff_kg = MATERIALS["ZnO"]["m_eff"] * _M0
     _solve = (run_rank1_keldysh_single_bias_fast if fast_solver
               else run_rank1_keldysh_single_bias)
     # Sensor-pixel area for the transverse-mode sum (docs/STACK_DECISION.md Sec. 3).
     A_TRANS_M2 = float(DEVICES[device]["transverse_size"][0]
                        * DEVICES[device]["transverse_size"][1])
-    if use_poisson and density_mode == "physical":
+    if use_poisson and density_mode == "physical" and donor_density is None:
         from core.poisson import physical_transverse_density
         bp0 = linear_bias_profile(0.0, Np, NS, ND)
         r0 = run_rank1_keldysh_single_bias(
@@ -363,10 +379,11 @@ def run_sweep(
     # q/h). I_dev_elastic applies the analytic Tsu-Esaki transverse sum to
     # the coherent transmission -- free, but it drops the inelastic current,
     # which is 3-24% here and differs between molecules, i.e. it is exactly
-    # the fingerprint. I_device is the exact E_t quadrature (one solve per
-    # node) and is only filled when transverse=True.
+    # the fingerprint. I_device integrates independent modes (one solve per
+    # node), under the assumption of no transverse mode mixing.
     I_dev_elastic = np.zeros(V_points)
-    I_device = np.zeros(V_points)
+    I_device = np.full(V_points, np.nan)
+    transverse_valid = np.ones(V_points, dtype=bool)
     d2I = np.zeros(V_points)
     iters = np.zeros(V_points, dtype=int)
     converged = np.zeros(V_points, dtype=bool)
@@ -375,6 +392,7 @@ def run_sweep(
     n_profiles = np.zeros((V_points, Np)) if use_poisson else None
     poisson_iters = np.zeros(V_points, dtype=int) if use_poisson else None
     poisson_converged = np.zeros(V_points, dtype=bool) if use_poisson else None
+    poisson_residual = np.zeros(V_points) if use_poisson else None
 
     U_warm = None  # warm-start the Poisson loop from the previous bias point
     t_start = time.time()
@@ -401,6 +419,7 @@ def run_sweep(
             n_profiles[i] = sc.n_e
             poisson_iters[i] = sc.poisson_iters
             poisson_converged[i] = sc.poisson_converged
+            poisson_residual[i] = sc.poisson_residual_eV
         else:
             if flat_band_contacts:
                 _, dvals = contact_dirichlet(contact_mask, float(V))
@@ -436,15 +455,18 @@ def run_sweep(
         if transverse:
             # Transverse energy E_t enters only through the contact occupations,
             # so solving at E_t == solving with Ef lowered by E_t at the SAME
-            # bias profile. Exact, inelastic included.
+            # bias profile, assuming independent transverse channels.
             def _solve_at_Ef(ef, _bp=bp_used, _V=float(V)):
-                return _solve(
+                node = _solve(
                     V=_V, E_grid=E_grid, H_z=H_z, UB=UB, bias_profile=_bp,
                     t0=t0, Ef=ef, kT=kT, chi_diag=chi_default,
                     D0_sq_per_mode=D0_sq, hnu_idx_per_mode=hnu_idx,
                     N_bose_per_mode=N_bose, chi_per_mode=chi_list,
                     max_iter=scba_max_iter, tol=scba_tol, mix=scba_mix, eta=eta,
                 )
+                transverse_valid[i] &= bool(current_diagnostics(
+                    node.I_left, node.I_right, node.converged)["current_valid"])
+                return node
             # Electrons are injected only above the emitter band edge (+V/2),
             # and mu_L - E_t = V/2 + Ef - E_t falls below it once E_t > Ef, so
             # the integrand lives on E_t < Ef + O(kT) whatever the bias
@@ -474,33 +496,14 @@ def run_sweep(
                   f"elapsed={elapsed:6.1f}s  eta={eta_s:6.1f}s",
                   flush=True)
 
-    # Datta transverse-area "Fix A" prefactor: 10 µm × 10 µm sensor pixel.
+    # Area is metadata for I_R; it enters only the transverse-integrated fields.
     dev = DEVICES[device]
     Ly, Lz = dev["transverse_size"]
     A_trans_m2 = Ly * Lz  # m²
-    # Rank-1 wrapper returns the 1D current in A already (Patil IE prefactor).
-    # Multiply by A_⊥ / (1 m²) would double-count area; the Patil formula is
-    # per sub-band, so the sensor-pixel scaling is A_⊥ / A_Patil_ref. For
-    # SISPAD we adopt the Datta "Fix A" convention: take the 1D solve as the
-    # per-(Ly·Lz) current already and keep the multiplier = 1. A follow-up
-    # analytic ∫dE_⊥ with effective mass will refine this — flagged in README.
-
-    # Save
-    if out_dir is None:
-        today = _dt.date.today().isoformat()
-        out_dir = os.path.join("results", today)
-    os.makedirs(out_dir, exist_ok=True)
-    date = _dt.date.today().isoformat()
-    tag = "poisson" if use_poisson else ("flatband" if flat_band_contacts else "rank1scba")
-    if use_poisson and density_mode == "physical":
-        tag += "-physdens"
-    if use_poisson and density_prefactor_scale != 1.0:
-        tag += f"-C{density_prefactor_scale:g}".replace(".", "p")
-    fname = (
-        f"iets_{device}_{molecule}_{int(V_min*1000)}-{int(V_max*1000)}mV_"
-        f"{int(T_K)}K_{tag}_{date}.npz"
-    )
-    out_path = os.path.join(out_dir, fname)
+    diag = current_diagnostics(I_L, I_R, converged)
+    numerical_valid = diag["current_valid"] & transverse_valid
+    if use_poisson:
+        numerical_valid &= poisson_converged
     save_kw = dict(
         V=V_grid, I_L=I_L, I_R=I_R, d2I=d2I,
         iters=iters, converged=converged,
@@ -510,10 +513,15 @@ def run_sweep(
         D0_sq=np.asarray(D0_sq), hnu_idx=np.asarray(hnu_idx),
         N_bose=np.asarray(N_bose),
         A_trans_m2=A_trans_m2,
+        model="single_mode_local_scba", current_convention="per transverse mode per spin",
+        spectrum_grid_validated=False, numerical_valid=numerical_valid, **diag,
+        transverse_valid=transverse_valid,
+        contact_density_m3=bulk_electron_density(Ef, kT, m_eff_kg),
+        temperature_policy="fixed_doping" if donor_density is not None else "fixed_Ef",
         # I_L/I_R are per spin per transverse mode (prefactor q/h).
         # I_dev_elastic: analytic Tsu-Esaki transverse sum of the coherent
-        # transmission (free, elastic only). I_device: exact E_t quadrature
-        # including inelastic transport; zero unless transverse=True.
+        # transmission (elastic only). I_device: independent-mode quadrature;
+        # NaN unless transverse=True. Neither models localized intermode coupling.
         I_dev_elastic=I_dev_elastic, I_device=I_device,
         transverse=transverse, transverse_nodes=transverse_nodes,
         transverse_emax_kt=transverse_emax_kt,
@@ -526,18 +534,26 @@ def run_sweep(
             U_profiles=U_profiles, n_profiles=n_profiles, N_D=N_D, eps_r=eps_r,
             density_prefactor=density_prefactor,
             poisson_iters=poisson_iters, poisson_converged=poisson_converged,
+            poisson_residual_eV=poisson_residual,
             poisson_max_iter=poisson_max_iter, poisson_tol=poisson_tol,
             poisson_kT_screen=poisson_kT_screen, poisson_bc=poisson_bc,
             density_prefactor_scale=density_prefactor_scale,
             density_mode=density_mode,
         )
-    np.savez_compressed(out_path, **save_kw)
+    with open(out_path, "xb") as stream:
+        np.savez_compressed(stream, **save_kw)
     if verbose:
         conserv = np.abs(I_L + I_R) / np.maximum(np.abs(I_R), 1e-30)
         print(f"[done] wrote {out_path}")
         print(f"[done] peak |I_R|={np.max(np.abs(I_R)):.3e} A  "
               f"median conservation residual={np.median(conserv):.2%}  "
               f"max iters used={iters.max()}")
+    if not np.all(numerical_valid):
+        message = (f"{np.count_nonzero(~numerical_valid)}/{V_points} biases failed solver/"
+                   f"conservation/Poisson checks. Diagnostic data saved to {out_path}")
+        if not allow_unconverged:
+            raise RuntimeError(message)
+        print(f"[UNVALIDATED] {message}")
     return out_path
 
 
@@ -550,10 +566,13 @@ def main():
     ap.add_argument("--V-max", type=float, default=0.4)
     ap.add_argument("--V-points", type=int, default=201)
     ap.add_argument("--dE", type=float, default=0.002)
-    ap.add_argument("--scba-max-iter", type=int, default=10)
-    ap.add_argument("--scba-mix", type=float, default=0.4)
-    ap.add_argument("--scba-tol", type=float, default=1e-5)
-    ap.add_argument("--Ef", type=float, default=0.02,
+    ap.add_argument("--scba-max-iter", type=int, default=500)
+    ap.add_argument("--scba-mix", type=float, default=0.3)
+    ap.add_argument("--scba-tol", type=float, default=1e-7)
+    filling = ap.add_mutually_exclusive_group()
+    filling.add_argument("--donor-density", type=float,
+                        help="fixed ionized contact density in m^-3; computes Ef at T")
+    filling.add_argument("--Ef", type=float, default=0.02,
                     help="contact Fermi level in eV (default 0.02). For a temperature "
                          "sweep at fixed doping this must move with T; holding it fixed "
                          "changes the emitter electron density with T")
@@ -561,10 +580,9 @@ def main():
     ap.add_argument("--poisson", action="store_true",
                     help="Enable self-consistent Poisson–NEGF (default OFF; "
                          "the SISPAD reproduction path uses a fixed linear drop)")
-    ap.add_argument("--poisson-max-iter", type=int, default=40)
-    ap.add_argument("--poisson-tol", type=float, default=5e-3,
-                    help="Poisson convergence tol on the predictor-step residual "
-                         "(eV); 5 meV ≪ kT is the inner-SCBA-limited floor")
+    ap.add_argument("--poisson-max-iter", type=int, default=1000)
+    ap.add_argument("--poisson-tol", type=float, default=1e-5,
+                    help="tolerance in eV on both predictor step and unscreened Poisson defect")
     ap.add_argument("--poisson-kt-screen", type=float, default=0.002,
                     help="Screening temperature (eV) for the Thomas–Fermi "
                          "predictor fallback; small over-damps for stability "
@@ -582,8 +600,8 @@ def main():
                          "= transverse-integrated supply-function density, no fit "
                          "constant (donors anchored to equilibrium physical density)")
     ap.add_argument("--transverse", action="store_true",
-                    help="also compute the exact transverse-mode-integrated device "
-                         "current (one extra solve per quadrature node per bias)")
+                    help="integrate independent transverse channels, with no intermode "
+                         "scattering (one extra solve per quadrature node per bias)")
     ap.add_argument("--fast-solver", action="store_true",
                     help="diagonal-Sigma SCBA (~3x faster; agrees to <2e-6, not bit-exact)")
     ap.add_argument("--transverse-nodes", type=int, default=10,
@@ -593,6 +611,8 @@ def main():
                          "measured from the emitter band edge: electrons are injected "
                          "only above it, so the integrand vanishes beyond this")
     ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--allow-unconverged", action="store_true",
+                    help="retain a failing run for diagnosis or historical reproduction")
     args = ap.parse_args()
 
     for mol in args.molecules:
@@ -603,6 +623,7 @@ def main():
             V_min=args.V_min, V_max=args.V_max, V_points=args.V_points,
             dE=args.dE,
             T_K=args.T, Ef=args.Ef,
+            donor_density=args.donor_density, allow_unconverged=args.allow_unconverged,
             scba_max_iter=args.scba_max_iter, scba_mix=args.scba_mix,
             scba_tol=args.scba_tol,
             use_poisson=args.poisson, poisson_max_iter=args.poisson_max_iter,

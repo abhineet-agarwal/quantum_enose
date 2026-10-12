@@ -1,5 +1,13 @@
 # Reproducing the SISPAD 2026 abstract
 
+> **Historical recipe only (audit 2026-10-12):** successful reproduction does
+> not validate the physical claims. The 69 nA current is per mode per spin;
+> archived conservation errors reach 0.65–1.98% at 300 K; molecular spectra fail
+> grid refinement; fixed-Ef temperature sweeps change carrier density. The
+> earlier test-failure count below is historical (the updated tests pass).
+> Generate figures only with `--historical --out-dir <fresh-directory>`.
+> See [VALIDATION.md](../VALIDATION.md) for current checks.
+
 **Authoritative source:** `SISPAD_2026_Abhineet-9.pdf` (the `-9` revision; supersedes
 `-5`). Title: *"NEGF Study of Room-Temperature IETS in a BEOL-Compatible
 ZnO/Mg₀.₃Zn₀.₇O RTD for a Quantum Biomimetic Electronic Nose"*,
@@ -17,7 +25,7 @@ bit-for-bit (see "Verification status" below).
 |---|---|
 | Device | ZnO / Mg₀.₃Zn₀.₇O **symmetric** RTD, 2 nm barriers / 3 nm well / 10 nm n⁺ contacts |
 | Material | ΔEc = 0.47 eV, m\* = 0.28 m₀, ℏω_LO ≈ 72 meV, N_D = 10²⁵ m⁻³ |
-| Pixel area | 10 µm × 10 µm = 10⁻⁷ cm² (Datta "Fix A" prefactor) |
+| Pixel area | 10 µm × 10 µm = 10⁻⁶ cm² (Datta "Fix A" prefactor) |
 | Bound state | E₁ = 149 meV |
 | NDR | V_res ≈ 560 mV, Baseline peak |I_R| **≈ 69 nA**, PVR ≈ 6 (300 K) |
 | Temp sweep (Mol_A) | peak rises 69 nA (300 K) → ~110 nA (10 K) |

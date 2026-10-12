@@ -416,6 +416,34 @@ def fermi_dirac_minus_half(eta):
             - fermi_dirac_half(np.asarray(eta, dtype=float) - h)) / (2.0 * h)
 
 
+def bulk_electron_density(Ef: float, kT: float, m_eff_kg: float) -> float:
+    """3D parabolic-band density (m^-3), including spin; energies are eV."""
+    if kT <= 0 or m_eff_kg <= 0:
+        raise ValueError("kT and effective mass must be positive")
+    Nc = 2.0 * (m_eff_kg * kT * _Q / (2.0 * np.pi * _HBAR**2))**1.5
+    return float(Nc * fermi_dirac_half(Ef / kT))
+
+
+def fermi_level_from_density(density_m3: float, kT: float, m_eff_kg: float) -> float:
+    """Contact Ef at fixed fully ionized donor density and temperature.
+
+    Uses the same Fermi-integral convention as the Poisson terminal model.
+    This assumes a parabolic band and does not model donor freeze-out.
+    """
+    from scipy.optimize import brentq
+    if density_m3 <= 0 or not np.isfinite(density_m3):
+        raise ValueError("density_m3 must be finite and positive")
+    bulk_electron_density(0.0, kT, m_eff_kg)  # validate temperature and mass
+    width = max(1.0, 40.0 * kT)
+    while bulk_electron_density(-width, kT, m_eff_kg) > density_m3:
+        width *= 2
+    upper = width
+    while bulk_electron_density(upper, kT, m_eff_kg) < density_m3:
+        upper *= 2
+    return float(brentq(lambda ef: bulk_electron_density(ef, kT, m_eff_kg) - density_m3,
+                        -width, upper, xtol=1e-13))
+
+
 def solve_poisson_1d(
     eps_r: np.ndarray,
     N_D: np.ndarray,

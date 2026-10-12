@@ -1,5 +1,13 @@
 # Rank-1 Projected SCBA for Quasi-3D IETS with a Localized Molecular Vibron
 
+> **Implementation scope corrected 2026-10-12:** this document is a proposed
+> multimode derivation, not the implemented production transport model. The
+> shipped Keldysh driver solves Nm=1. Its multimode reconstruction is a stub;
+> independent-channel transverse quadrature does not supply localized intermode
+> scattering. The quoted rank-1 error for a small truncated basis is not a
+> demonstrated error bound over the occupied transverse continuum. See
+> [VALIDATION.md](../VALIDATION.md).
+
 **Status:** Derivation for the SISPAD 2026 paper (Section II + supplementary).
 **Author:** Abhineet Agarwal, with AI assistance. Historical provenance: earlier
 thread with Nidhi Pandey on "molecule projection + perturbation theory" that

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# HISTORICAL ONLY: fixed-Ef temperature sweep, under-resolved energy grid.
+# This reproduces archived numbers; it does not certify physical predictions.
 # Reproduce the SISPAD 2026 abstract figures (SISPAD_2026_Abhineet-9.pdf) from
 # scratch: rank-1 projected NEGF-SCBA sweep + figure regeneration.
 #
@@ -29,7 +31,8 @@ VPTS="${1:-51}"
 OUTDIR="${2:-results/reproduce_$(date +%F)}"
 DEVICE="ZnO_MgZnO_symmetric"
 COMMON=(--device "$DEVICE" --V-min 0 --V-max 0.8 --V-points "$VPTS"
-        --scba-mix 0.3 --scba-max-iter 100 --scba-tol 1e-4 --out-dir "$OUTDIR")
+        --scba-mix 0.3 --scba-max-iter 100 --scba-tol 1e-4 --Ef 0.02
+        --allow-unconverged --out-dir "$OUTDIR")
 
 mkdir -p "$OUTDIR"
 echo "==> Reproducing SISPAD -9 into $OUTDIR  (V_points=$VPTS)"
@@ -45,8 +48,8 @@ done
 
 # Paper data figures (Fig 3a/b/c + ΔI): fig1_IV, fig2_d2IdV2, fig3_deltaI, fig4_deltaD.
 # Recovered generator; d2I/dV2 = raw np.diff(I,2)/dV2, no smoothing.
-python run/make_paper_figs.py --data-dir "$OUTDIR" --out-dir "$OUTDIR"
+python run/make_paper_figs.py --historical --data-dir "$OUTDIR" --out-dir "$OUTDIR"
 
 echo "==> Done. Figures + .npz in $OUTDIR"
 echo "    Compare against golden: results/sispad_scba_2026-04-14/"
-echo "    NOTE: paper Fig 4 (temperature, temp.png) is not regenerated here — pending."
+echo "    Historical output only: fixed Ef, per-mode current, spectral refinement not passed."

@@ -166,3 +166,71 @@ def test_density_grid_runs_scba_once(coarse_setup, monkeypatch):
     assert sc.poisson_iters == 4
     assert calls["n"] == 1
     assert sc.result is not None and np.isfinite(sc.result.I_right)
+
+
+def _charge_test_inputs():
+    """Small chain with deep TF regions and a quantum interior."""
+    n = 45
+    t = 5.0
+    contacts = np.zeros(n, dtype=bool)
+    contacts[:20] = contacts[-20:] = True
+    return dict(
+        V=0.1, E_grid=np.arange(-0.1, 0.3, 0.01),
+        H_z=2*t*np.eye(n)-t*np.eye(n, k=1)-t*np.eye(n, k=-1),
+        UB=np.zeros(n), t0=t, Ef=0.02, kT=0.02585,
+        chi_diag=np.zeros(n), D0_sq_per_mode=[], hnu_idx_per_mode=[],
+        N_bose_per_mode=[], chi_per_mode=None, eps_r=np.full(n, 8.5),
+        N_D=contacts.astype(float)*1e24, a_m=0.2e-9,
+        density_prefactor=None, contact_mask=contacts, outer_clamp_sites=0,
+        density_mode="physical", m_eff_kg=0.28*9.1093837015e-31,
+        density_E_grid=np.arange(-0.1, 0.3, 0.01), final_scba=False,
+        poisson_max_iter=2, poisson_tol=1e-12)
+
+
+@pytest.mark.parametrize("right_bc", ["clamp", "neumann"])
+def test_returned_charge_includes_corrections_and_tf(monkeypatch, right_bc):
+    """Output must be the charge in Poisson, including at the returned U."""
+    import core.poisson_negf as pn
+    from core.poisson import fermi_dirac_half
+    kw = _charge_test_inputs()
+    n = kw["UB"].size
+    ballistic = np.full(n, 2e23)
+    monkeypatch.setattr(pn, "ballistic_transverse_density", lambda *a, **k: ballistic.copy())
+    offset = np.full(n, 1e23)
+    correction = lambda u: pn.DensityCorrection(1e23*(1+u), True)
+    sc = pn.run_self_consistent_bias(**kw, bc_scheme=right_bc,
+                                     density_offset=offset, density_correction=correction)
+    expected = ballistic + offset + correction(sc.U).density
+    em, col = pn.terminal_masks(kw["contact_mask"])
+    nc = 1e24 / fermi_dirac_half(kw["Ef"]/kw["kT"])
+    for mask, mu in [(em, .07), (col, -.03)]:
+        expected[mask] = nc*fermi_dirac_half((mu-sc.U[mask])/kw["kT"])
+    np.testing.assert_allclose(sc.n_e, expected, rtol=1e-13)
+    # Independently calculate the defect with the original Poisson operator.
+    from core.poisson import solve_poisson_1d
+    exact = solve_poisson_1d(kw["eps_r"], kw["N_D"], expected, kw["a_m"], .05, -.05,
+                             right_bc="neumann" if right_bc == "neumann" else "dirichlet")
+    assert sc.poisson_residual_eV == pytest.approx(np.max(abs(exact-sc.U)), abs=1e-12)
+
+
+def test_small_damped_step_cannot_certify_poisson(monkeypatch):
+    import core.poisson_negf as pn
+    kw = _charge_test_inputs()
+    kw.update(contact_mask=None, N_D=np.zeros(45), poisson_max_iter=1, poisson_tol=1e-5)
+    monkeypatch.setattr(pn, "ballistic_transverse_density", lambda *a, **k: np.full(45, 1e25))
+    sc = pn.run_self_consistent_bias(**kw, kT_screen=1e-12)
+    assert sc.dU_final < 1e-5
+    assert sc.poisson_residual_eV > 0.01
+    assert not sc.poisson_converged
+
+
+def test_unconverged_inner_charge_cannot_certify_poisson(monkeypatch):
+    import core.poisson_negf as pn
+    kw = _charge_test_inputs()
+    kw.update(V=0, contact_mask=None, N_D=np.zeros(45))
+    monkeypatch.setattr(pn, "ballistic_transverse_density", lambda *a, **k: np.zeros(45))
+    sc = pn.run_self_consistent_bias(
+        **kw, density_correction=lambda u: pn.DensityCorrection(np.zeros(45), False))
+    assert sc.poisson_residual_eV == pytest.approx(0)
+    assert not sc.charge_converged
+    assert not sc.poisson_converged

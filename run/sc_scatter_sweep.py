@@ -26,7 +26,8 @@ import numpy as np
 
 import run.bistability_check as bc
 from core.poisson import ballistic_transmission, ballistic_transverse_density
-from core.poisson_negf import run_self_consistent_bias
+from core.poisson_negf import DensityCorrection, run_self_consistent_bias
+from core.validation import current_diagnostics
 from core.scba_rank1_keldysh import (landauer_current_1mode,
                                      run_rank1_keldysh_single_bias_lowmem,
                                      tsu_esaki_current)
@@ -181,9 +182,13 @@ def solve_bias(V, U, dn, ph, lo_margin, sigma_prev):
     return U, dn, sigma, hist, converged, I_bal, I_dev_bal, final
 
 
-def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-4, poisson_tol=1e-4,
+def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-5, poisson_tol=1e-5,
                        final_tol=1e-5, final_max_iter=300):
-    """Scattering density recomputed inside every Poisson step (no outer loop).
+    """Windowed single-mode-ratio charge correction inside every Poisson step.
+
+    This is an approximate charge model: the ratio n_SCBA/n_ballistic at one
+    transverse energy multiplies the integrated ballistic charge. It is not
+    the full transverse integral of the scattering-dependent lesser function.
 
     The offset correction lagged U and overshot near resonance; holding the
     per-site ratio fixed amplified errors where scattering changes the charge
@@ -192,7 +197,8 @@ def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-4, poisson_t
     (warm-started, RGF, ~0.1-0.3 s), so Poisson sees the actual n(U).
     """
     E = window(V, lo_margin)
-    state = {"sigma": align(sigma_prev, E.size), "calls": 0, "scba_iters": 0, "last": None}
+    state = {"sigma": align(sigma_prev, E.size), "calls": 0, "scba_iters": 0,
+             "last": None, "correction": None}
 
     def corr(Uc):
         rb = scba(V, Uc, E, (None,) * 5)
@@ -203,7 +209,8 @@ def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-4, poisson_t
         n_s = rs.n_diag.sum(0) * DE_SCBA / (2 * np.pi)
         ok = n_b > 1e-8 * n_b.max()
         r = np.where(ok, n_s / np.where(ok, n_b, 1.0), 1.0)
-        return window_density(V, Uc, E[0], E[-1]) * (r - 1.0)
+        state["correction"] = window_density(V, Uc, E[0], E[-1]) * (r - 1.0)
+        return DensityCorrection(state["correction"], rs.converged)
 
     t = time.time()
     tol_saved = bc.POISSON_TOL
@@ -215,10 +222,17 @@ def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-4, poisson_t
     rf = scba(V, sc.U, E, ph, state["sigma"], tol=final_tol, max_iter=final_max_iter)
     final = dict(I_R=rf.I_right, I_L=rf.I_left, I_mode=0.5 * (rf.I_right - rf.I_left),
                  I_err=0.5 * abs(rf.I_right + rf.I_left), iters=rf.iters_used, conv=rf.converged)
+    final.update({k: v.item() for k, v in current_diagnostics(
+        rf.I_left, rf.I_right, rf.converged).items()})
+    # Keep I_err for old readers, but it is only half the conservation defect.
+    final["error_kind"] = "contact_conservation_defect_not_statistical_uncertainty"
     info = dict(poisson_iters=sc.poisson_iters, poisson_conv=sc.poisson_converged,
+                poisson_residual_eV=sc.poisson_residual_eV, charge_converged=sc.charge_converged,
+                density_model="windowed_single_mode_ratio", validation_version=2,
+                numerical_valid=bool(sc.poisson_converged and final["current_valid"]),
                 dU_final=sc.dU_final, corr_calls=state["calls"], scba_iters=state["scba_iters"],
                 secs=time.time() - t)
-    return sc.U, corr(sc.U), (rf.sigma_in_ph, rf.sigma_out_ph), info, final, I_bal, I_dev_bal
+    return sc.U, state["correction"], (rf.sigma_in_ph, rf.sigma_out_ph), info, final, I_bal, I_dev_bal
 
 
 def main():

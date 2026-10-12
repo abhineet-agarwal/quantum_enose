@@ -4,7 +4,8 @@ Recovered from the inline script that made the 2026-09-14 versions (session
 transcript), with two changes:
 
 * currents are the transverse-integrated DEVICE current (`I_device`), not the
-  single-mode `I_R` the earlier figures plotted;
+  single-mode `I_R` the earlier figures plotted; this is an independent-channel
+  estimate and does not implement localized intermode scattering;
 * d2I/dV2 is the raw second difference np.diff(I, 2) / dV**2, which is what the
   paper states (Fig. 2: "diff(diff(I))/dV^2 -- no smoothing") and what the
   SISPAD figures used. The 2026-09-14 versions used np.gradient twice, i.e. a
@@ -21,11 +22,14 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from core.validation import require_plot_data
 
 DATA_300 = "results/2026-09-26"
 DATA_T = {10: "results/2026-09-30", 77: "results/2026-09-30",
@@ -37,6 +41,7 @@ MOLS = [("Baseline", "Baseline", "#444444", "-"),
 TEMPS = [(10, "#1f77b4"), (77, "#2ca02c"), (150, "#ff7f0e"), (300, "#d62728")]
 LW = 1.5
 FIELD = "I_device"
+ALLOW_UNVALIDATED = False
 ISCALE, IUNIT = 1e3, "mA"
 
 plt.rcParams.update({"font.size": 8, "axes.labelsize": 8.5, "legend.fontsize": 6.6,
@@ -49,8 +54,9 @@ def load(data_dir, mol, T_K):
     if not files:
         raise SystemExit(f"no {mol} {T_K} K sweep in {data_dir}")
     a = np.load(files[-1], allow_pickle=True)
-    if not bool(np.all(a["converged"])):
-        raise SystemExit(f"{files[-1]}: not every bias point converged")
+    require_plot_data(a, FIELD, allow_unvalidated=ALLOW_UNVALIDATED)
+    if T_K != 300 and not ALLOW_UNVALIDATED and str(a.get("temperature_policy", "")) != "fixed_doping":
+        raise ValueError("Temperature figures require fixed-doping provenance")
     return np.asarray(a["V"]), np.asarray(a[FIELD])
 
 
@@ -60,6 +66,14 @@ def d2(V, I):
     return V[1:-1], np.diff(I, 2) / dV ** 2
 
 
+def save_figure(fig, out, filename):
+    if ALLOW_UNVALIDATED:
+        fig.text(.5, .005, "DIAGNOSTIC / UNVALIDATED — independent transverse channels",
+                 ha="center", fontsize=6, color="darkred")
+    fig.savefig(os.path.join(out, filename), dpi=300)
+    plt.close(fig)
+
+
 def fig_iv(out):
     f, a = plt.subplots(figsize=(4.0, 2.9))
     for m, lab, c, ls in MOLS:
@@ -67,7 +81,7 @@ def fig_iv(out):
         a.plot(V * 1e3, I * ISCALE, ls, color=c, lw=LW, label=lab)
     a.set_xlabel("Bias Voltage (mV)"); a.set_ylabel(f"Current ({IUNIT})")
     a.legend(frameon=False); a.grid(alpha=.25); f.tight_layout(pad=.3)
-    f.savefig(os.path.join(out, "fig4_IV.png"), dpi=300); plt.close(f)
+    save_figure(f, out, "fig4_IV.png")
 
 
 def fig_d2(out):
@@ -78,7 +92,7 @@ def fig_d2(out):
     a.axhline(0, color="k", lw=.5)
     a.set_xlabel("Bias Voltage (mV)"); a.set_ylabel(r"$d^2I/dV^2$ (A/V$^2$)")
     a.legend(frameon=False); a.grid(alpha=.25); f.tight_layout(pad=.3)
-    f.savefig(os.path.join(out, "fig5_d2IdV2.png"), dpi=300); plt.close(f)
+    save_figure(f, out, "fig5_d2IdV2.png")
 
 
 def fig_deltaD(out):
@@ -90,7 +104,7 @@ def fig_deltaD(out):
     a.axhline(0, color="k", lw=.5)
     a.set_xlabel("Bias Voltage (mV)"); a.set_ylabel(r"$\Delta D$ (A/V$^2$)")
     a.legend(frameon=False, ncol=3); a.grid(alpha=.25); f.tight_layout(pad=.3)
-    f.savefig(os.path.join(out, "fig7_deltaD.png"), dpi=300); plt.close(f)
+    save_figure(f, out, "fig7_deltaD.png")
 
 
 def fig_temp(out):
@@ -116,17 +130,26 @@ def fig_temp(out):
     for a in ax:
         a.legend(frameon=False); a.grid(alpha=.25)
     f.tight_layout(pad=.3)
-    f.savefig(os.path.join(out, "temp.png"), dpi=300); plt.close(f)
+    save_figure(f, out, "temp.png")
 
 
 FIGS = {"iv": fig_iv, "d2": fig_d2, "deltaD": fig_deltaD, "temp": fig_temp}
 
 
 def main():
+    global ALLOW_UNVALIDATED
     ap = argparse.ArgumentParser()
     ap.add_argument("--figs", nargs="+", choices=sorted(FIGS), default=sorted(FIGS))
     ap.add_argument("--out", required=True)
+    ap.add_argument("--allow-unvalidated", action="store_true",
+                    help="make labelled diagnostic figures, not validated sensor predictions")
     args = ap.parse_args()
+    ALLOW_UNVALIDATED = args.allow_unvalidated
+    if any(os.path.exists(os.path.join(args.out, f)) for f in
+           ("fig4_IV.png", "fig5_d2IdV2.png", "fig7_deltaD.png", "temp.png")):
+        raise FileExistsError("Choose a fresh --out directory; existing figures are preserved")
+    if ALLOW_UNVALIDATED:
+        plt.rcParams["figure.titlesize"] = 8
     os.makedirs(args.out, exist_ok=True)
     for name in args.figs:
         FIGS[name](args.out)

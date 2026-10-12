@@ -1,0 +1,32 @@
+{
+  "V": 0.576,
+  "info": {
+    "poisson_iters": 139,
+    "poisson_conv": true,
+    "poisson_residual_eV": 9.559446934093163e-06,
+    "charge_converged": true,
+    "density_model": "windowed_single_mode_ratio",
+    "validation_version": 2,
+    "numerical_valid": true,
+    "dU_final": 9.402463252428106e-09,
+    "corr_calls": 140,
+    "scba_iters": 1308,
+    "secs": 118.75371623039246
+  },
+  "final": {
+    "I_R": 9.762162363845306e-10,
+    "I_L": -9.759190841577933e-10,
+    "I_mode": 9.76067660271162e-10,
+    "I_err": 1.4857611336866963e-13,
+    "iters": 1,
+    "conv": true,
+    "conservation_abs_A": 2.9715222673733927e-13,
+    "conservation_rel": 0.000304391809582945,
+    "current_valid": true,
+    "error_kind": "contact_conservation_defect_not_statistical_uncertainty"
+  },
+  "U_well_eV": 0.17644233436725318,
+  "old_U_well_eV": 0.1762820121167949,
+  "old_I_mode_A": 1.0064635304745238e-09,
+  "model": "windowed_single_mode_ratio; not transverse-integrated SCBA charge"
+}

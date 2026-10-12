@@ -14,12 +14,13 @@ import os, sys, time
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import numpy as np
 import run.sc_scatter_sweep as sw
+from core.validation import current_diagnostics
 
 MOL = sys.argv[1] if len(sys.argv) > 1 else "Mol_A"
 D2 = float(sys.argv[2]) if len(sys.argv) > 2 else 0.015
 D = os.path.abspath(os.path.join(os.path.dirname(sw.bc.OUT), "..", "2026-10-07"))
 SRC = os.path.join(D, f"sc_coupled_D2{D2:g}_up.npz")
-OUT = os.path.join(D, f"fixedU_fingerprint_D2{D2:g}_{MOL}.npz")
+OUT = os.path.join(D, f"fixedU_fingerprint_D2{D2:g}_{MOL}_validation_v2.npz")
 
 if __name__ == "__main__":
     src = np.load(SRC, allow_pickle=True)
@@ -32,12 +33,14 @@ if __name__ == "__main__":
         for m in ("Baseline", MOL):
             r = sw.scba(V, U, E, ph[m], None, tol=1e-7, max_iter=4000)
             row[m] = dict(I=0.5 * (r.I_right - r.I_left), I_err=0.5 * abs(r.I_right + r.I_left),
-                          iters=r.iters_used, conv=r.converged)
+                          iters=r.iters_used, conv=r.converged,
+                          **{k: v.item() for k, v in current_diagnostics(r.I_left, r.I_right, r.converged).items()})
         dI = row[MOL]["I"] - row["Baseline"]["I"]
-        db[key] = dict(V=V, Baseline=row["Baseline"], mol=row[MOL], dI=dI,
-                       dI_err=float(np.hypot(row[MOL]["I_err"], row["Baseline"]["I_err"])), secs=time.time() - t)
+        db[key] = dict(V=V, Baseline=row["Baseline"], mol=row[MOL], dI=dI, error_kind="sum_of_half_contact_defects_not_sigma",
+                       potential_validation_version=src[key].item().get("info", {}).get("validation_version", 1),
+                       dI_err=float(row[MOL]["I_err"] + row["Baseline"]["I_err"]), secs=time.time() - t)
         np.savez(OUT, **{k: np.array(v, dtype=object) for k, v in db.items()})
         print(f"  V={float(key):5.0f} mV  I_BL {row['Baseline']['I']*1e9:9.4f}  I_{MOL} {row[MOL]['I']*1e9:9.4f} nA  "
-              f"dI {dI*1e9:+8.4f} +- {db[key]['dI_err']*1e9:.4f} ({100*dI/max(abs(row['Baseline']['I']),1e-30):+6.2f} %)"
+              f"dI {dI*1e9:+8.4f} (contact half-defects sum {db[key]['dI_err']*1e9:.4f}) ({100*dI/max(abs(row['Baseline']['I']),1e-30):+6.2f} %)"
               f"{'' if row['Baseline']['conv'] and row[MOL]['conv'] else '  SCBA NC'}  [{db[key]['secs']:.0f}s]", flush=True)
     print("[done]", flush=True)

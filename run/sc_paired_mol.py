@@ -42,7 +42,7 @@ def grid():
 
 
 def main():
-    out = os.path.join(OUTDIR, f"sc_paired_D2{D2:g}_{MOL}.npz")
+    out = os.path.join(OUTDIR, f"sc_paired_D2{D2:g}_{MOL}_validation_v2.npz")
     db = ({k: np.load(out, allow_pickle=True)[k].item() for k in np.load(out).files}
           if os.path.exists(out) else {})
     ph = {"Baseline": sw.phonons(D2, "Baseline"), MOL: sw.phonons(D2, MOL)}
@@ -65,16 +65,17 @@ def main():
             sig[m] = s
             row[m] = dict(U=Um, U_well=float(Um[sw.bc.well_sites].mean()), I=fin["I_mode"],
                           I_err=fin["I_err"], final=fin, info=info, I_bal=Ib, I_dev_bal=Idb,
-                          converged=bool(info["poisson_conv"]) and bool(fin["conv"]))
+                          converged=bool(info["numerical_valid"]))
         dI = row[MOL]["I"] - row["Baseline"]["I"]
-        dIe = float(np.hypot(row[MOL]["I_err"], row["Baseline"]["I_err"]))
+        dIe = float(row[MOL]["I_err"] + row["Baseline"]["I_err"])
         db[key] = dict(V=float(V), Baseline=row["Baseline"], mol=row[MOL], molecule=MOL,
-                       dI=dI, dI_err=dIe, D2=D2, tolerances=TIGHT, secs=time.time() - t)
+                       dI=dI, dI_err=dIe, error_kind="sum_of_half_contact_defects_not_sigma",
+                       D2=D2, tolerances=TIGHT, secs=time.time() - t)
         U = row["Baseline"]["U"]
         np.savez(out, **{k: np.array(v, dtype=object) for k, v in db.items()})
         ok = "" if (row["Baseline"]["converged"] and row[MOL]["converged"]) else "  NOT CONVERGED"
         print(f"  V = {V*1e3:5.0f} mV  I_BL {row['Baseline']['I']*1e9:9.4f}  I_{MOL} {row[MOL]['I']*1e9:9.4f} nA  "
-              f"dI {dI*1e9:+8.4f} +- {dIe*1e9:.4f} nA ({100*dI/max(abs(row['Baseline']['I']),1e-30):+6.2f} %)  "
+              f"dI {dI*1e9:+8.4f} (contact half-defects sum {dIe*1e9:.4f}) nA ({100*dI/max(abs(row['Baseline']['I']),1e-30):+6.2f} %)  "
               f"dU_well {(row[MOL]['U_well']-row['Baseline']['U_well'])*1e3:+6.2f} meV{ok}  "
               f"[{db[key]['secs']/60:.1f} min]", flush=True)
     print("[done]", flush=True)

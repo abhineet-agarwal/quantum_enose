@@ -1,5 +1,13 @@
 # Suggested revisions — *IEEE Sensors 2026-10* draft
 
+> **Further audit correction (2026-10-12):** the working manuscript source
+> `sispad2026_template.tex` now labels the implemented calculation as single-mode
+> local SCBA, corrects current units, withdraws unsupported grid/conservation and
+> electrostatic-shift claims, and identifies the fixed-Ef temperature confound.
+> Submitted PDFs and archived figures are unchanged. See
+> [VALIDATION.md](../VALIDATION.md); this historical revision list is not the
+> current acceptance checklist.
+
 > **Note (2026-10-12):** the paper has been submitted; this list is kept for the
 > record. Its Poisson-related statements (peak-shift magnitudes, "electrostatics
 > only shifts the measurement window") rely on unconverged self-consistent runs

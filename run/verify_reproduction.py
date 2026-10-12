@@ -64,7 +64,8 @@ def _setup(mol):
 
 
 def main() -> int:
-    print(f"Reproduction gate: device={DEVICE}  tol={TOL_REL:.1%}\n")
+    print(f"Historical reproduction gate: device={DEVICE}  tol={TOL_REL:.1%}")
+    print("Checks archived per-mode currents only; not spectral or device-model accuracy.\n")
     all_ok = True
     for mol, date, biases in CHECKS:
         gpath = os.path.join(

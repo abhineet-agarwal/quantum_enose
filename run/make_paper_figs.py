@@ -1,42 +1,30 @@
-"""
-Generate the SISPAD -9 paper data figures (Fig 3a/b/c + ΔI), reconstructed.
+"""Plot archived SISPAD sweeps with explicit validation/provenance labels.
 
-This is the recovered "correct" generator. The original was overwritten on
-2026-04-28 by a rebroken rewrite (the surviving run/regen_sispad_figs.py), which
-used the 201-pt grid, the analytic d2I field, a serif/black color scheme, and
-renumbered the outputs to fig4_IV..fig8. This script reproduces the figures as
-they actually appear in SISPAD_2026_Abhineet-9.pdf:
-
-  fig1_IV.png       I-V at 300 K              -> paper Fig 3a (Overleaf: fig4_IV)
-  fig2_d2IdV2.png   numerical d2I/dV2 at 300K -> paper Fig 3b (Overleaf: fig5_d2IdV2)
-  fig3_deltaI.png   ΔI = I_mol - I_BL  (nA)
-  fig4_deltaD.png   ΔD discrimination metric  -> paper Fig 3c (Overleaf: fig7_deltaD)
-  fig5_temp.png     Mol_A 10/77/150/300 K     -> paper Fig 4 (Overleaf: temp.png)
-
-Method — consistent across ALL panels (intentionally; the published paper mixed
-numerical Fig 3b with analytic Fig 4b, which we do not replicate):
-  * 51-point 0-800 mV grid (16 mV spacing) for every figure, including the
-    temperature sweep (Mol_A at 10/77/150 K re-run at 51 pts to match Fig 3).
-  * default matplotlib colors (C0..C3 = blue/orange/green/red), with titles.
-  * d2I/dV2 by RAW second difference  d2 = np.diff(I, 2) / dV**2  (NO smoothing,
-    plotted at the interior bias points V[1:-1]). Matches fig2's +125 / -170
-    µA/V² scale at 300 K; np.gradient**2 (the broken path) gives ±55.
-The npz `d2I` field (per-bias analytic) is NOT used — it underpredicts at 300 K
-and was the source of the earlier inconsistency.
+The historical 51-point grid is retained for figure reproduction, not because
+its molecular derivatives are converged. Raw second differences are used
+consistently; the saved analytic d2I field is not the full voltage derivative.
+I_R is per transverse mode per spin. Independent-channel device estimates are
+available only in runs that explicitly computed them.
 
 Usage:
-  python run/make_paper_figs.py [--data-dir DIR] [--out-dir DIR]
+  python run/make_paper_figs.py --historical --out-dir results/new_history_figs
+
+Without --historical, numerical and spectral validation are required. Existing
+figures are never replaced. This script does not certify a spectrum.
 """
 from __future__ import annotations
 
 import argparse
 import glob
 import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from core.validation import require_plot_data
 
 MOLS = ["Baseline", "Mol_A", "Mol_B", "Mol_AB"]
 IV_LABEL = {
@@ -48,8 +36,8 @@ IV_LABEL = {
 D_LABEL = {"Mol_A": r"$\Delta$Mol_A", "Mol_B": r"$\Delta$Mol_B", "Mol_AB": r"$\Delta$Mol_AB"}
 
 
-def load_51pt(data_dir, mol, field="I_R"):
-    """Load the clean 51-point (16 mV) 300 K sweep for `mol` (any run date)."""
+def load_51pt(data_dir, mol, field="I_R", historical=False):
+    """Load the historical 51-point (16 mV) 300 K sweep for `mol` (any run date)."""
     best = None
     for f in sorted(glob.glob(os.path.join(
             data_dir, f"iets_ZnO_MgZnO_symmetric_{mol}_0-800mV_300K_rank1scba_*.npz"))):
@@ -59,6 +47,7 @@ def load_51pt(data_dir, mol, field="I_R"):
                 raise SystemExit(
                     f"{f} has no '{field}' field (fields: {sorted(a.files)}). "
                     f"Re-run the sweep with --transverse to emit the device current.")
+            require_plot_data(a, field, allow_unvalidated=historical)
             best = (a["V"], a[field])
     return best
 
@@ -73,7 +62,7 @@ TEMPS = [10, 77, 150, 300]
 TEMP_LABEL = {10: "10 K", 77: "77 K", 150: "150 K", 300: "300 K"}
 
 
-def load_temp_51pt(data_dir, T_K, field="I_R"):
+def load_temp_51pt(data_dir, T_K, field="I_R", historical=False):
     """Load the 51-pt Mol_A sweep at temperature T_K (any run date)."""
     best = None
     for f in sorted(glob.glob(os.path.join(
@@ -82,6 +71,7 @@ def load_temp_51pt(data_dir, T_K, field="I_R"):
         if a["V"].size <= 60:          # 51-pt grid, consistent with Fig 3
             if field not in a.files:
                 raise SystemExit(f"{f} has no '{field}' field (fields: {sorted(a.files)}).")
+            require_plot_data(a, field, allow_unvalidated=historical)
             best = (a["V"], a[field])
     return best
 
@@ -96,15 +86,17 @@ CURRENT_UNITS = {
     "I_device":      (1e3, "mA"),
 }
 CURRENT_TAG = {
-    "I_R": "single transverse mode", "I_L": "single transverse mode",
-    "I_dev_elastic": "device, elastic only", "I_device": "device",
+    "I_R": "single mode, single spin", "I_L": "single mode, single spin",
+    "I_dev_elastic": "independent channels, coherent only", "I_device": "independent-channel device estimate",
 }
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default="results/sispad_scba_2026-04-14")
-    ap.add_argument("--out-dir", default="results/sispad_scba_2026-04-14")
+    ap.add_argument("--out-dir", required=True, help="fresh directory; archived figures are preserved")
+    ap.add_argument("--historical", action="store_true",
+                    help="plot archived/unvalidated data, clearly labelled as historical")
     ap.add_argument("--current", default="I_R", choices=sorted(CURRENT_UNITS),
                     help="which current field to plot (I_R = one transverse mode; "
                          "I_device = transverse-integrated device current)")
@@ -113,14 +105,19 @@ def main():
     TAG = CURRENT_TAG[args.current]
     os.makedirs(args.out_dir, exist_ok=True)
 
-    data = {m: load_51pt(args.data_dir, m, args.current) for m in MOLS}
+    data = {m: load_51pt(args.data_dir, m, args.current, args.historical) for m in MOLS}
     missing = [m for m, d in data.items() if d is None]
     if missing:
         raise SystemExit(f"missing 51-pt data for: {missing} in {args.data_dir}")
 
     def save(fig, stem):
+        if args.historical:
+            fig.text(.5, .005, "HISTORICAL / UNVALIDATED — per-mode unless otherwise labelled; fixed-Ef temperature sweep",
+                     ha="center", fontsize=7, color="darkred")
         for ext in ("png", "pdf"):
             p = os.path.join(args.out_dir, f"{stem}.{ext}")
+            if os.path.exists(p):
+                raise FileExistsError(f"Preserving {p}; choose a fresh --out-dir")
             fig.savefig(p, dpi=150)
             print(f"  wrote {p}")
         plt.close(fig)
@@ -171,7 +168,7 @@ def main():
 
     # Fig 5 — temperature dependence (Mol_A), 2-panel like paper Fig 4.
     # Same 51-pt grid + raw np.diff(I,2)/dV2 as Fig 3 (consistent, not analytic).
-    temp = {T: load_temp_51pt(args.data_dir, T, args.current) for T in TEMPS}
+    temp = {T: load_temp_51pt(args.data_dir, T, args.current, args.historical) for T in TEMPS}
     miss_T = [T for T, d in temp.items() if d is None]
     if miss_T:
         print(f"[warn] fig5_temp skipped — missing 51-pt Mol_A data at T={miss_T}K "

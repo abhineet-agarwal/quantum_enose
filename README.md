@@ -1,95 +1,98 @@
-# Quantum Electronic Nose — ZnO/MgZnO RTD-IETS (NEGF-SCBA)
+# Quantum Electronic Nose — 1D ZnO/MgZnO NEGF-SCBA
 
-NEGF study of **room-temperature Inelastic Electron Tunneling Spectroscopy
-(IETS)** in a BEOL-compatible **ZnO/Mg₀.₃Zn₀.₇O resonant tunneling diode (RTD)**,
-operated as a quantum biomimetic electronic nose. Agarwal & Ganguly, IIT Bombay —
-SISPAD 2026 (`SISPAD_2026_Abhineet-9.pdf`).
+This repository studies vibrationally assisted transport in a ZnO/MgZnO RTD.
+The implemented production model is **one transverse mode, one spin, with
+local longitudinal phonon self-energies**. The separate rank-1 Dyson algebra
+is tested, but a multimode Keldysh scattering solver is not implemented.
 
-The transport problem is solved with a **rank-1 projected NEGF-SCBA**: a localized
-molecular vibron whose transverse-mode coupling matrix is rank-1 (to O(10⁻⁶) for
-σ_mol ≈ 3 Å) collapses the 3D phonon-dressed NEGF problem to a single projected 1D
-SCBA loop. Derivation: `docs/METHOD_DERIVATION.md`.
+**Validation status (2026-10-12):** archived SISPAD currents reproduce exactly,
+but the molecular second derivative fails energy/bias-grid refinement. The
+69 nA peak is per mode per spin, not the current of a 10 µm × 10 µm pixel.
+The newer coupled Poisson work uses an approximate windowed single-mode-ratio
+charge correction. Neither path is a validated quantitative planar sensor model.
+See [VALIDATION.md](VALIDATION.md) for measured checks and remaining work.
 
----
+## Main paths
 
-## What's here (production pipeline)
+- `config/`: layer stacks, material parameters and synthetic molecular modes.
+- `core/scba_rank1_keldysh.py`: 1D SCBA, dense/diagonal/RGF implementations,
+  contact currents and independent-channel transverse integration.
+- `core/poisson.py`, `core/poisson_negf.py`: electrostatics, charge assembly,
+  fixed-doping contact filling and Poisson residual checks.
+- `core/validation.py`: numerical diagnostics, spectral refinement and plot gates.
+- `run/run_rank1_sweep.py`: fixed-potential or exploratory Poisson sweeps.
+- `run/sc_coupled_sweep.py`: spacer-device Poisson with the approximate scattering charge.
+- `run/check_spectrum_convergence.py`: compare molecular delta-I and delta-d2I
+  under independent energy and voltage refinement.
+- `results/sispad_scba_2026-04-14/`: immutable historical data, not validation targets.
 
-```
-quantum_enose/
-├── core/
-│   ├── scba_rank1_keldysh.py   # rank-1 Keldysh SCBA driver (Anderson/DIIS mixing)
-│   ├── scba_solver_rank1.py    # rank-1 projected Dyson algebra
-│   ├── iets_analytic.py        # analytic d²I/dV² (stored in npz; NOT used for figs)
-│   └── self_energy.py          # gaussian_chi_projector (used by a test)
-├── config/
-│   ├── device_library.py       # ZnO_MgZnO_symmetric + other stacks
-│   └── molecular_database.py   # Mol_A/B/AB (+ VOC database)
-├── run/
-│   ├── run_rank1_sweep.py      # bias/temperature sweep driver
-│   ├── make_paper_figs.py      # the SISPAD paper figures (fig1_IV … fig5_temp)
-│   ├── verify_reproduction.py  # fast (~25 s) reproduction gate
-│   └── reproduce_sispad.sh     # full from-scratch sweep + figures
-├── tests/                      # 6 production tests + Patil reference data
-├── docs/                       # current method/stack/benchmark docs (see below)
-├── results/sispad_scba_2026-04-14/   # the SISPAD paper results (figs + 51-pt npz)
-├── papers/                     # references, LaTeX sources, poster
-└── archive/                    # legacy code/scripts/old results (gitignored, local only)
-```
+`I_L` and `I_R` are per transverse mode per spin. `I_device`, when explicitly
+computed with `--transverse`, sums **independent** transverse channels and
+includes area and spin. It still omits localized intermode scattering.
+`I_dev_elastic` integrates only the coherent transmission.
 
-## Device & key numbers (SISPAD `-9`)
-
-- Symmetric ZnO / Mg₀.₃Zn₀.₇O RTD: 2 nm barriers / 3 nm well / 10 nm n⁺ contacts.
-- ΔEc = 0.47 eV, m\* = 0.28 m₀, ℏω_LO ≈ 72 meV, 10 µm × 10 µm pixel.
-- NDR at **V_res ≈ 560 mV**, Baseline peak **≈ 69 nA** (PVR ≈ 6) at 300 K.
-- Analytes: Mol_A (ℏω=100 meV), Mol_B (180 meV), Mol_AB (both), Baseline (bulk LO only).
-- Sweep: 0–800 mV, **51 points (16 mV)**, Anderson/DIIS mixing (M=8, β=0.3),
-  current conservation < 0.2%. d²I/dV² = raw `np.diff(I,2)/dV²` (no smoothing).
-
-## Reproduce
+## Tests and historical reproduction
 
 ```bash
 source venv/bin/activate
-
-# Fast gate (~25 s): re-run key bias points, check vs golden data
+# A fresh environment also needs the test dependencies:
+# python -m pip install -r requirements-dev.txt
+python -m pytest tests/ -q
 python run/verify_reproduction.py
-
-# Regenerate the paper figures from the golden npz (seconds)
-python run/make_paper_figs.py
-#   -> results/sispad_scba_2026-04-14/{fig1_IV,fig2_d2IdV2,fig3_deltaI,fig4_deltaD,fig5_temp}
-
-# Full from-scratch sweep + figures (~2 h at 51 pts)
-bash run/reproduce_sispad.sh
+python run/make_paper_figs.py --historical --out-dir results/historical_figures_new
 ```
 
-Full recipe, parameters, data locations, and the Overleaf figure-name mapping:
-**`docs/REPRODUCE_SISPAD.md`**.
+The reproduction gate checks saved per-mode currents, not physical correctness.
+`bash run/reproduce_sispad.sh` deliberately retains the old parameters, including
+fixed Ef at all temperatures, for historical comparison. It explicitly permits
+failed numerical checks and labels its figures. Existing result files and
+figures are protected from replacement.
 
-## Documentation
-
-- `docs/REPRODUCE_SISPAD.md` — authoritative reproduction recipe (start here).
-- `docs/METHOD_DERIVATION.md` — rank-1 projected SCBA derivation + parity theorem.
-- `docs/STACK_DECISION.md` — why ZnO/Mg₀.₃Zn₀.₇O (vs In₂O₃/κ-Ga₂O₃).
-- `docs/PATIL_BENCHMARK.md`, `docs/PATIL_OCTAVE_REFERENCE.md` — 1D GaAs benchmark
-  (validated by `tests/test_patil_reference.py`, `tests/test_patil_octave_match.py`).
-- `rules.md` — code conventions.
-
-Legacy framework docs and the pre-submission draft/checklist live under
-`archive/docs/`; the older multimode/hybrid solver and exploratory scripts are
-under `archive/` (kept locally, not versioned).
-
-## Tests
+## Numerical validation
 
 ```bash
-python -m pytest tests/ -q
+python run/check_spectrum_convergence.py --centers 0.096 0.56 --molecules Mol_A
 ```
-47 pass. Four `tests/test_rank1_keldysh.py` cases (the Patil 1D benchmark γ/δ
-tightening items) are known-failing and unrelated to the ZnO production results —
-see `docs/REPRODUCE_SISPAD.md`.
 
-## References
+The JSON report records raw currents, SCBA status, current conservation, delta-I,
+delta-d2I and energy/bias refinement checks. Exit 1 means the gate failed; it is
+not a reason to smooth the spectrum or choose a coarser grid. A pass covers only
+the selected stencils and parameters. Energy-window, spatial-grid and model
+validation remain separate requirements.
 
-- Patil, Saha, Ganguly, *Sci. Rep.* 8:128 (2018) — RTD-IETS concept.
-- Pandey et al., *Sci. Rep.* 11:11389 (2021) — biomimetic e-nose / VOC modes.
-- Datta, *Quantum Transport: Atom to Transistor*, Cambridge — NEGF.
+New sweeps require solver convergence and current conservation. Poisson also
+requires converged inner charge solves and an unscreened equation defect below
+tolerance; a small damped step alone no longer passes. Failing sweeps save
+explicit diagnostic flags and exit nonzero. `--allow-unconverged` is available
+for diagnostics or historical reproduction. Figure generators require spectral
+validation or an explicit historical/diagnostic option and visible labelling.
 
-IIT Bombay, Dept. of Electrical Engineering.
+For a temperature series at fixed fully ionized contact density:
+
+```bash
+for T in 10 77 150 300; do
+  python run/run_rank1_sweep.py --device ZnO_MgZnO_symmetric --molecules Mol_A \
+    --T "$T" --donor-density 5.03636495047155e24 --V-max 0.8 --V-points 51 \
+    --out-dir results/fixed_doping_new
+done
+```
+
+This sets Ef(T) from the parabolic-band Fermi integral. It does not account for
+donor freeze-out. These are exploratory sweeps; choose and validate energy and
+voltage grids before interpreting the derivative.
+
+## Self-consistent work
+
+```bash
+python -u run/sc_coupled_sweep.py --mol Baseline --v1 1.6 --down-to 0.64
+```
+
+New coupled runs use fresh output directories. An explicit `--out-dir` can resume
+a run certified by the current diagnostic schema; old/unconverged cached points
+cannot be silently reused. A `--seed file.npz:key` is an initial potential only.
+
+The charge correction is an approximation, not full transverse-integrated
+SCBA. Contact imbalance is a numerical diagnostic, **not a statistical standard
+deviation**, experimental noise level, or bound on model/grid error.
+Older Poisson peak-shift claims were withdrawn; see
+[docs/POISSON_STATUS.md](docs/POISSON_STATUS.md).

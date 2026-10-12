@@ -1,20 +1,14 @@
-"""
-Self-consistent Poisson–NEGF outer loop for the rank-1 Keldysh SCBA.
+"""Self-consistent 1D Poisson coupling for the local NEGF-SCBA solver.
 
-This wraps the *unchanged* :func:`core.scba_rank1_keldysh.run_rank1_keldysh_single_bias`
-in a Gummel-style outer iteration:
+The charge model combines quantum charge, optional scattering corrections and
+Thomas-Fermi terminal charge. Both the iteration and returned output use that
+same assembly. Convergence requires an unscreened Poisson equation defect and
+converged nested charge solves, in addition to a small predictor step.
 
-    1. Solve NEGF-SCBA with the current potential U(z)  →  G^<  →  n(z).
-    2. Solve 1D Poisson for U_new(z) given n(z) (Dirichlet ±V/2).
-    3. Mix U ← (1−β)U + βU_new, repeat until max|ΔU| < tol.
-
-The transport is 1D along the growth direction z; the transverse plane is the
-analytic Datta-area prefactor ("Fix A"), so the electron density is normalized
-to m⁻³ by a single geometric prefactor calibrated from contact charge
-neutrality at equilibrium (see :func:`compute_density_prefactor`).
-
-The default (Poisson OFF) reproduction path through ``run/run_rank1_sweep.py``
-is untouched: nothing here is called unless ``--poisson`` is passed.
+The calibrated and contact-injection density modes are approximations. The
+coupled sweep supplies a windowed single-mode-ratio scattering correction; this
+is not a full transverse-integrated scattering calculation. Poisson is opt-in
+and the fixed-potential historical reproduction path remains available.
 """
 from __future__ import annotations
 
@@ -298,15 +292,30 @@ def compute_density_prefactor(
 # Self-consistent single-bias solve
 # ──────────────────────────────────────────────────────────────────────────────
 @dataclass
+class DensityCorrection:
+    """Additional charge and convergence status from a nested transport solve.
+
+    An array-only correction is also accepted for prescribed, non-iterated
+    charge. Iterative SCBA callbacks must return this object so an unfinished
+    inner solve cannot certify an outer Poisson fixed point.
+    """
+
+    density: np.ndarray
+    converged: bool
+
+
+@dataclass
 class SelfConsistentResult:
     """One bias point's self-consistent Poisson–NEGF output."""
 
-    result: Rank1KeldyshResult   # final NEGF solve at the converged U
+    result: Rank1KeldyshResult | None   # final NEGF solve, if requested
     U: np.ndarray                # (Np,) converged electron potential energy (eV)
     n_e: np.ndarray              # (Np,) converged electron density (m⁻³)
     poisson_iters: int
     poisson_converged: bool
     dU_final: float              # max|ΔU| at the last iteration (eV)
+    poisson_residual_eV: float   # unscreened Poisson defect at returned U
+    charge_converged: bool       # status of the inner solves supplying n_e
 
 
 def run_self_consistent_bias(
@@ -330,12 +339,13 @@ def run_self_consistent_bias(
     contact_mask: np.ndarray | None = None,
     NS: int = 1,
     ND: int = 1,
-    scba_max_iter: int = 10,
+    scba_max_iter: int = 500,
     scba_mix: float = 0.4,
     scba_tol: float = 1e-5,
     eta: float = 1e-12,
-    poisson_max_iter: int = 40,
-    poisson_tol: float = 5e-3,
+    poisson_max_iter: int = 1000,
+    poisson_tol: float = 1e-5,
+    poisson_residual_tol: float | None = None,
     kT_screen: float = 0.002,
     outer_clamp_sites: int = 15,
     bc_scheme: str = "clamp",
@@ -379,15 +389,23 @@ def run_self_consistent_bias(
        accumulation / triangular-quasi-bound state** forms. That accumulation
        is what raises the resonant peak (Akkala Fig 3.8).
 
-    Convergence: magnitude of the actual update ``max|U_new − U|``;
-    ``kT_screen`` (default 2 meV) damps the predictor; ``U_init`` warm-starts
-    from the previous bias (else a linear drop).
+    Convergence requires a small predictor step, converged inner charge solves,
+    and a small *unscreened* Poisson defect ``max|solve_poisson(n(U)) - U|``.
+    The latter is independent of predictor damping and defaults to the same
+    tolerance as the step. It is an equation-residual diagnostic in eV, not a
+    bound on the error of the nonlinear solution or on discretization error.
 
     Returns
     -------
     SelfConsistentResult
     """
     Np = H_z.shape[0]
+    if poisson_max_iter < 1 or poisson_tol <= 0 or kT_screen <= 0:
+        raise ValueError("Poisson iteration count and tolerances must be positive")
+    if poisson_residual_tol is None:
+        poisson_residual_tol = poisson_tol
+    if poisson_residual_tol <= 0:
+        raise ValueError("poisson_residual_tol must be positive")
     dE = float(E_grid[1] - E_grid[0])
     U_L, U_R = +V / 2.0, -V / 2.0
 
@@ -477,9 +495,9 @@ def run_self_consistent_bias(
                 # Evaluate the density on its own (finer) grid via the banded
                 # ballistic route. The density integrand peaks at the band edge,
                 # on the 1-D 1/sqrt(E) van Hove singularity, so it needs far
-                # finer dE than the current does (which is converged to 0.3% on
-                # the transport grid because f_L - f_R vanishes there). Phonons
-                # shift the density by 0.003%, so dropping them here is safe.
+                # finer dE than a smooth transport integrand. This is ballistic
+                # charge; scattering requires an explicit density correction
+                # whose approximation and numerical accuracy must be checked.
                 n = ballistic_transverse_density(
                     density_E_grid, H_z, UB, U_profile, t0,
                     mu_L, mu_R, kT, m_eff_kg, a_m, eta, method=density_method)
@@ -490,16 +508,11 @@ def run_self_consistent_bias(
             n = density_prefactor * extract_density_1d(r.G_lesser, dE)
         return r, n
 
-    res: Rank1KeldyshResult | None = None
-    hist_U: list[np.ndarray] = []
-    hist_r: list[np.ndarray] = []
-    best_dU = np.inf
-    n_e = np.zeros(Np)
-    converged = False
-    dU = np.inf
-    it = 0
-    for it in range(1, poisson_max_iter + 1):
-        res, n_q = negf_and_density(U, need_scba=False)
+    def assemble_charge(U_profile, n_q, transport):
+        """The identical charge model for iteration, diagnostics and output."""
+        n_q = n_q.copy()
+        charge_ok = (density_mode == "physical" and density_E_grid is not None
+                     or transport is not None and transport.converged)
         # Thesis Eq 3.1 charge model assembled per-site:
         #   • deep emitter terminal: n_TF = Nc_FD · F_{1/2}((E_F+V/2 − U)/kT)
         #   • deep collector terminal: n_TF = Nc_FD · F_{1/2}((E_F−V/2 − U)/kT)
@@ -516,21 +529,46 @@ def run_self_consistent_bias(
             # callable(U) -> additive density, re-evaluated every step, so a
             # correction defined relative to the ballistic density follows
             # the potential instead of lagging it
-            n_q = np.maximum(n_q + density_correction(U), 0.0)
+            correction = density_correction(U_profile)
+            if isinstance(correction, DensityCorrection):
+                charge_ok = charge_ok and correction.converged
+                correction = correction.density
+            n_q = np.maximum(n_q + correction, 0.0)
         n_e = n_q.copy()
         dn_dU = -n_q / kT_screen
         if em_fd is not None and em_fd.any():
-            eta_em = (Ef + V / 2.0 - U[em_fd]) / kT
+            eta_em = (Ef + V / 2.0 - U_profile[em_fd]) / kT
             f12 = fermi_dirac_half(eta_em)
             fmh = fermi_dirac_minus_half(eta_em)
             n_e[em_fd] = Nc_FD * f12
             dn_dU[em_fd] = -Nc_FD * fmh / kT
         if col_fd is not None and col_fd.any():
-            eta_col = (Ef - V / 2.0 - U[col_fd]) / kT
+            eta_col = (Ef - V / 2.0 - U_profile[col_fd]) / kT
             f12 = fermi_dirac_half(eta_col)
             fmh = fermi_dirac_minus_half(eta_col)
             n_e[col_fd] = Nc_FD * f12
             dn_dU[col_fd] = -Nc_FD * fmh / kT
+        return n_e, dn_dU, bool(charge_ok and np.all(np.isfinite(n_e)))
+
+    def poisson_defect(U_profile, charge):
+        # Setting dn/dU=0 removes all predictor screening. This solves the
+        # original Poisson equation with the same interior clamps/Neumann face.
+        exact = poisson_newton_update(
+            U_profile, eps_r, N_D, charge, a_m, U_L, U_R, kT_screen,
+            dn_dU_override=np.zeros(Np), dirichlet_mask=d_mask,
+            dirichlet_vals=d_vals, right_bc=right_bc)
+        return float(np.max(np.abs(exact - U_profile)))
+
+    res: Rank1KeldyshResult | None = None
+    hist_U: list[np.ndarray] = []
+    hist_r: list[np.ndarray] = []
+    best_dU = np.inf
+    n_e = np.zeros(Np)
+    converged = False
+    dU = np.inf
+    for it in range(1, poisson_max_iter + 1):
+        res, n_q = negf_and_density(U, need_scba=False)
+        n_e, dn_dU, charge_ok = assemble_charge(U, n_q, res)
         if poisson_newton:
             # True Newton: exact ballistic density response dn_z/dU_w (on a
             # coarser energy grid; only the step direction depends on it), the
@@ -555,6 +593,10 @@ def run_self_consistent_bias(
             right_bc=right_bc,
         )
         dU = float(np.max(np.abs(U_new - U)))
+        if dU < poisson_tol and charge_ok and poisson_defect(U, n_e) < poisson_residual_tol:
+            # Keep the U whose density and residual were actually evaluated.
+            converged = True
+            break
         if poisson_newton and dU > newton_step_cap:
             U_new = U + (U_new - U) * (newton_step_cap / dU)     # guard near resonance
         if poisson_anderson > 0:
@@ -585,16 +627,17 @@ def run_self_consistent_bias(
             print(f"    [poisson {it:2d}] step={dU*1e3:8.3f} meV  "
                   f"I_R={i_r} A  Umin={U.min():+.3f}  "
                   f"n_well_max={n_e.max():.2e} m⁻³", flush=True)
-        if dU < poisson_tol:
-            converged = True
-            break
 
     # Final consistency solve so the returned observables match the returned U.
     # final_scba=False (density on its own grid only) skips it: result is None
     # and the caller works from U, e.g. a banded ballistic current.
-    res, n_e = negf_and_density(U, need_scba=final_scba)
+    res, n_q = negf_and_density(U, need_scba=final_scba)
+    n_e, _, charge_ok = assemble_charge(U, n_q, res)
+    residual = poisson_defect(U, n_e)
+    converged = bool(converged and charge_ok and residual < poisson_residual_tol)
 
     return SelfConsistentResult(
         result=res, U=U, n_e=n_e, poisson_iters=it,
         poisson_converged=converged, dU_final=dU,
+        poisson_residual_eV=residual, charge_converged=charge_ok,
     )

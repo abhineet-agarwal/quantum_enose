@@ -1,5 +1,18 @@
 # Self-consistent Poisson–NEGF with phonon scattering — status
 
+> **Audit correction (2026-10-12, after the runs below):** the numerical tables
+> below describe the earlier stopping criterion and the approximate
+> `windowed_single_mode_ratio` charge closure. They are not full transverse-SCBA
+> validation. New code returns the same assembled charge used in Poisson and
+> requires an unscreened equation defect, converged inner charge, and contact
+> conservation. A fresh Baseline solve at 576 mV gives 0.9761 nA per mode per
+> spin (old: 1.0065 nA), with a 9.56 µeV Poisson defect. See
+> [the audit and machine-readable reports](../VALIDATION.md).
+> Contact imbalance is not a statistical uncertainty: the prior sigma
+> significance claims are withdrawn. The +30% Mol_A result remains evidence
+> within the approximate model, not a validated device-level sensitivity.
+
+
 *Branch `feature/poisson-scf`. Current as of 2026-10-12. This document supersedes
 the conclusions of `POISSON_PEAK_SHIFT.md` and the Poisson-related items of
 `IEEE_SENSORS_2026_REVISIONS.md`.*
@@ -21,7 +34,7 @@ and no space charge; this work tests that assumption.
   multistability found earlier was an artifact of scattering-free spacers.
 - An **LO-phonon replica of E₁** at 480 mV is confirmed energy-resolved.
 - **Mol_A (100 meV) has a strong fingerprint**: its vibron replica of E₁ adds
-  **+30 % current at ~0.56 V, fully self-consistent** (+32 % at fixed potential).
+  **+30 % current at ~0.56 V, self-consistent within the approximate charge closure** (+32 % at fixed potential).
   A second, larger feature near 1.5 V is clear at fixed potential (+22–41 %) but
   its self-consistent solves do not yet converge.
 - **Open:** Poisson convergence at low bias and near 1.5 V; device (transverse-
@@ -109,7 +122,7 @@ spacer depletes and carries most of it).
 | main NDR | 1216 → 1248 mV | 66.5 → 16.9 nA | E₂, strongly phonon-assisted |
 | secondary peak | 1408 mV | 38.0 nA | not a replica of the main peak |
 
-All 51 up-sweep biases (0–1.6 V, 32 mV) and 30 down-sweep biases converged;
+All 51 up-sweep biases (0–1.6 V, 32 mV) and 30 down-sweep biases passed the earlier step-only Poisson criterion;
 current conservation ±0.001–0.07 nA. Absolute currents carry a ~2 % error from
 the Poisson tolerance (a tight re-solve at 960 mV moved U_well by 0.2 meV).
 
@@ -146,8 +159,8 @@ tolerance 10⁻⁷):
 | bias | ΔI / I_Baseline | significance |
 |---|---|---|
 | ≤ 224 mV | +0.2–0.3 % | not resolved |
-| 256–416 mV (E₁ valley) | +1.2 → +7.7 % | 3–22 σ |
-| **544–576 mV** | **+31.7 %, +32.4 %** (ΔI ≈ 0.3 nA) | ~200 σ |
+| 256–416 mV (E₁ valley) | +1.2 → +7.7 % | larger than contact imbalance; total numerical uncertainty unquantified |
+| **544–576 mV** | **+31.7 %, +32.4 %** (ΔI ≈ 0.3 nA) | sigma interpretation withdrawn; grid/model uncertainty unquantified |
 | 608–1216 mV | +0.5–8 % | |
 | 1248–1440 mV | +3–7 % | |
 | **1472–1568 mV** | **+22 → +41 → +28 %** (ΔI up to 8.8 nA) | |
@@ -161,7 +174,7 @@ the LO replica (480 mV) and the molecular replica (~560 mV) reads out ħω_mol.
 
 ### 4.5 Electrostatic feedback (`run/feedback_check.py`)
 
-Paired, fully self-consistent Baseline and Mol_A solves at tight tolerances:
+Paired, self-consistent within the approximate charge closure Baseline and Mol_A solves at tight tolerances:
 
 | bias | ΔI self-consistent | ΔI fixed potential | ΔU_well from molecule | |
 |---|---|---|---|---|
@@ -172,7 +185,7 @@ Paired, fully self-consistent Baseline and Mol_A solves at tight tolerances:
 | 320 mV | +6.7 % | +5.4 % | −0.69 meV | Poisson not converged |
 | 1472 / 1504 / 1536 mV | +41 / +73 / +51 % | +22 / +41 / +38 % | −4.1 / −6.1 / −0.4 meV | Poisson not converged |
 
-**The E₁ molecular replica survives self-consistency** — the molecule's own
+**The approximate model retains an E₁ molecular contribution** — the molecule's own
 charge trims it by 10–20 % of its size. Near 1.5 V the self-consistent numbers
 are indicative only.
 

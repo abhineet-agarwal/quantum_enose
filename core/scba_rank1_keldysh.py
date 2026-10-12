@@ -1,29 +1,14 @@
-"""
-Keldysh-consistent SCBA driver for the rank-1 projected solver.
+"""Single-transverse-mode local NEGF-SCBA and current integration helpers.
 
-Wraps the algebraic core in :mod:`core.scba_solver_rank1` with the bookkeeping
-needed to actually compute observables: bare contact self-energies, the
-Keldysh equation closing G̃^< from σ̃^< + contact in-scattering, the FBA/SCBA
-phonon update on the energy axis, and the Meir-Wingreen current at both
-contacts (for δ-current-conservation checks).
+The production solver uses standard 1D Green functions and longitudinally
+diagonal phonon self-energies. Its historic rank1 name does not imply an
+implemented multimode projection: the corresponding Keldysh reconstruction is
+still a stub. Separate tests validate the algebra in core.scba_solver_rank1.
 
-Scope (2026-04-09):
-
-* **Single-mode (Nm = 1) is fully implemented and tested** against
-  ``tests/patil_reference_1d.npz`` via ``tests/test_rank1_keldysh.py``.
-  This is the configuration that closes SISPAD Tier-1 γ-comparison —
-  the same physics Patil's `rtd2modes_1d.m` solves, plus the I_L/I_R
-  decomposition needed for δ.
-
-* **Multimode (Nm > 1)** is left as a documented stub. The rank-1
-  algebra carries through verbatim for the *phonon* piece, but the
-  *contact* in-scattering is mode-diagonal-but-not-rank-1, so the
-  reconstruction of G^< from G̃^R requires explicitly summing the
-  rank-1 correction over modes (Eq. 11 of ``docs/METHOD_DERIVATION.md``).
-  That sum is the next-turn task — see ``_multimode_not_implemented``.
-
-The energy axis follows Patil's convention: ℏω is an integer multiple of
-dE so that ``G^<(E ± ℏω)`` is an array shift, not an interpolation.
+Contact currents are per transverse mode per spin. Transverse quadrature sums
+independent channels and omits localized intermode coupling. Energy shifts for
+phonons use integer multiples of the uniform energy spacing. Solver convergence
+and contact conservation do not establish grid convergence of molecular spectra.
 """
 from __future__ import annotations
 
@@ -342,8 +327,10 @@ def transverse_integrated_current(current_at_Ef, Ef: float, kT: float,
 
         I_device = A_perp * 2 * m*/(2 pi hbar^2) * int_0^inf dE_t I_1mode(Ef - E_t)
 
-    This is exact **including inelastic scattering**, unlike
-    :func:`tsu_esaki_current`, which assumes elastic transport: the phonon
+    This integrates inelastic transport **under the independent-channel
+    assumption**. It does not describe transverse-mode mixing by a localized
+    molecule or general polar-optical scattering. Unlike
+    :func:`tsu_esaki_current`, the phonon
     self-energies depend on the contact occupations and hence on E_t, so the
     transverse integral does not otherwise factorise. Substituting the Landauer
     form for ``I_1mode`` reduces this expression analytically to Tsu-Esaki, so
