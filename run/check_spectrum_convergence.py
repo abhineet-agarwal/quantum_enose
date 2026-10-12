@@ -43,6 +43,10 @@ def main():
     group.add_argument("--donor-density", type=float, help="fixed ionized density, m^-3")
     ap.add_argument("--scba-tol", type=float, default=1e-7)
     ap.add_argument("--scba-max-iter", type=int, default=500)
+    ap.add_argument("--anderson-depth", type=int, default=0,
+                    help="SCBA mixer history; 0 = linear mixing. Anderson/DIIS returns "
+                         "wrong-sign, unconverged currents at D^2 >= 0.01 and Mol_A has "
+                         "D0^2 = 0.1; with it the 0.5 meV / 16 mV result here moved 6 %%")
     ap.add_argument("--rtol", type=float, default=.05)
     ap.add_argument("--delta-I-atol", type=float, default=1e-13, help="A")
     ap.add_argument("--delta-D-atol", type=float, default=1e-10, help="A/V^2")
@@ -75,7 +79,8 @@ def main():
                     V=V, E_grid=E, H_z=H, UB=UB, bias_profile=linear_bias_profile(V, Np, 1, 1),
                     t0=t0, Ef=ef, kT=kt, chi_diag=ch, D0_sq_per_mode=D,
                     hnu_idx_per_mode=hi, N_bose_per_mode=nb, chi_per_mode=chl,
-                    max_iter=args.scba_max_iter, tol=args.scba_tol, mix=.3, method="rgf")
+                    max_iter=args.scba_max_iter, tol=args.scba_tol, mix=.3, method="rgf",
+                    anderson_depth=args.anderson_depth)
                 diag = current_diagnostics(r.I_left, r.I_right, r.converged)
                 row = dict(dE=de, molecule=mol, V=V, I_L=r.I_left, I_R=r.I_right,
                            scba_converged=r.converged, iters=r.iters_used,

@@ -93,3 +93,37 @@ Exit 1 and a completed JSON with `passed: false` are expected on these grids.
 
 The updated manuscript is a working source revision. Its archival figures are
 labelled as unvalidated; a new submission-ready PDF has not been generated.
+
+## Refined spectrum study at 560 mV — 2026-10-12
+
+`run/check_spectrum_convergence.py --centers 0.56 --molecules Mol_A --energy-steps
+0.002 0.0005 0.0002 0.0001 0.00005 0.000025 --bias-steps 0.016 0.008 0.004 0.002
+--scba-max-iter 4000` with **linear SCBA mixing** (`--anderson-depth 0`, now the
+default: Mol_A has D0^2 = 0.1, where Anderson/DIIS is unreliable; with it the
+0.5 meV / 16 mV value above read 1.216 instead of 1.149). Every one of the 108
+individual solves passed its numerical checks; the refinement gate **FAILS**.
+[Raw report](validation/spectrum_560_refined_2026-10-12.json).
+
+Mol_A minus Baseline, per mode per spin:
+
+| Energy spacing | dD, 16 mV | dD, 8 mV | dD, 4 mV | dD, 2 mV | dI at 560 mV |
+|---|---:|---:|---:|---:|---:|
+| 2 meV | 1.42 | 16.60 | 151.6 | 273.5 | 0.4233 nA |
+| 0.5 meV | 1.15 | 4.73 | 40.65 | 71.10 | 0.4561 nA |
+| 0.2 meV | 0.56 | 9.22 | 31.17 | 36.90 | 0.5364 nA |
+| 0.1 meV | 0.62 | 5.41 | 17.02 | 19.79 | 0.5168 nA |
+| 0.05 meV | 0.61 | 3.11 | 7.76 | 8.22 | 0.5401 nA |
+| 0.025 meV | 0.57 | 2.22 | 4.78 | 3.44 | 0.5612 nA |
+
+(dD in µA/V².) Within this single-mode model:
+
+- **dI is stable to about ±5 % for spacing <= 0.2 meV (~0.54 nA)**; the published
+  2 meV grid gives 0.42 nA.
+- **dD with the published 16 mV stencil is stable to about ±5 % for spacing
+  <= 0.1 meV (~0.59 µA/V²)**; the published 2 meV value, 1.42 µA/V², is 2.4x larger.
+- **dD on 8/4/2 mV stencils is not converged even at 0.025 meV**: it keeps falling
+  as the grid is refined, consistent with the 134 µeV-wide E1 resonance being
+  sampled unevenly (I(V) is jagged on a few-mV scale at 0.5 meV). A local
+  curvature would need spacing well below the E1 linewidth.
+
+"Stable to ±5 %" is the spread of the last refinements, not an error bound.
