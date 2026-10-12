@@ -1,5 +1,15 @@
 # Self-Consistent Electrostatics and the Resonance Peak Position
 
+> **SUPERSEDED (2026-10-12) — see [`POISSON_STATUS.md`](POISSON_STATUS.md).** Every
+> self-consistent number in this document comes from Poisson runs stopped by a
+> 5 meV step criterion while the potential was still ~300 meV from the fixed point
+> (640 mV, spacer device: 204 nA after 40 iterations vs 2.0 nA converged). The
+> −96 mV backward shift, the +64 mV forward shift with spacers, and the mechanisms
+> built on them are withdrawn. The spacer-layer physics (donors against the barrier
+> vs an undoped spacer) stands; the shift magnitudes do not. Converged, the spacer
+> device's main NDR is at ~1.01 V ballistic and ~1.22 V with ZnO-calibrated
+> scattering.
+
 **Device:** ZnO/Mg₀.₃Zn₀.₇O double-barrier RTD, `ZnO_MgZnO_symmetric_long`
 (30 nm n⁺ ZnO / 2 nm MgZnO / 3 nm ZnO / 2 nm MgZnO / 30 nm n⁺ ZnO),
 CBO = 0.47 eV, m\* = 0.28 m₀, T = 300 K.

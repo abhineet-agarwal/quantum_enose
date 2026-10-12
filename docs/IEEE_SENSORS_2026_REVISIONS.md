@@ -1,5 +1,13 @@
 # Suggested revisions — *IEEE Sensors 2026-10* draft
 
+> **Note (2026-10-12):** the paper has been submitted; this list is kept for the
+> record. Its Poisson-related statements (peak-shift magnitudes, "electrostatics
+> only shifts the measurement window") rely on unconverged self-consistent runs
+> and are superseded by [`POISSON_STATUS.md`](POISSON_STATUS.md). In particular,
+> with converged electrostatics and ZnO-calibrated scattering the Mol_A fingerprint
+> survives (+30 % at its E₁ vibron replica), but the no-Poisson linear-drop model
+> used in the paper places the resonances at very different biases.
+
 Source: `IEEE_Sensors_2026-10.pdf` (Agarwal & Ganguly, "Design of a Room-Temperature
 Quantum Biomimetic Electronic Nose Using a CMOS BEOL Compatible Resonant
 Tunneling Diode").
