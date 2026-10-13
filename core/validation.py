@@ -55,7 +55,7 @@ def require_plot_data(data, field, allow_unvalidated=False):
         return
     diag = current_diagnostics(data["I_L"], data["I_R"], data["converged"])
     valid = diag["current_valid"]
-    for key in ("numerical_valid", "poisson_converged"):
+    for key in ("numerical_valid", "poisson_converged", "physical_valid"):
         if key in data:
             valid = valid & np.asarray(data[key])
     if field == "I_device":
@@ -64,3 +64,5 @@ def require_plot_data(data, field, allow_unvalidated=False):
         raise ValueError("Solver, conservation, or Poisson checks failed")
     if not bool(data.get("spectrum_grid_validated", False)):
         raise ValueError("Spectrum lacks energy/bias-grid validation; use an explicit diagnostic plot option")
+    if not np.all(data.get("physical_valid", False)):
+        raise ValueError("SCBA rates/populations lack physical validation; rerun with the current solver")

@@ -16,11 +16,94 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
+from core.validation import current_diagnostics
 
 from core.scba_solver_rank1 import (
     build_projected_bare_g,
     projected_dyson_step,
 )
+
+
+def _nonnegative_finite(*arrays):
+    """Diagonal rates/populations must be real and nonnegative, up to roundoff."""
+    for value in arrays:
+        value = np.asarray(value)
+        if not np.all(np.isfinite(value)):
+            return False
+        floor = 1e-14 + 1e-12 * float(np.max(np.abs(value)))
+        if np.min(value.real) < -floor or np.max(np.abs(value.imag)) > floor:
+            return False
+    return True
+
+
+def _relative_sigma_residual(si, so, si_new, so_new):
+    return float((np.abs(si_new-si).sum() + np.abs(so_new-so).sum())
+                 / max(np.abs(si).sum() + np.abs(so).sum(), 1e-30))
+
+
+class _ScbaMixer:
+    """Optional DIIS, with rejection of nonphysical proposals and history reset.
+
+    Never clip a negative extrapolated rate into an apparently converged state.
+    Fall back to the convex linear update from the current physical iterate.
+    """
+
+    def __init__(self, mix, depth, max_iter, tol, guard=True):
+        if not np.isfinite(mix) or not 0 < mix <= 1:
+            raise ValueError("SCBA mix must be in (0, 1]")
+        if depth < 0 or int(depth) != depth or max_iter < 1 or not np.isfinite(tol) or tol <= 0:
+            raise ValueError("Require nonnegative integer Anderson depth, max_iter >= 1 and tol > 0")
+        self.mix, self.depth, self.guard = mix, depth, guard
+        self.x, self.r = [], []
+        self.fallbacks = 0
+
+    def update(self, si, so, si_new, so_new):
+        linear = ((1-self.mix)*si + self.mix*si_new,
+                  (1-self.mix)*so + self.mix*so_new)
+        if self.depth < 2:
+            return linear
+        pack = lambda a, b: np.concatenate([a.real.ravel(), a.imag.ravel(),
+                                            b.real.ravel(), b.imag.ravel()])
+        x, f = pack(si, so), pack(si_new, so_new)
+        self.x.append(x); self.r.append(f-x)
+        if len(self.x) > self.depth:
+            self.x.pop(0); self.r.pop(0)
+        m = len(self.r)
+        if m < 2:
+            return linear
+        R = np.column_stack(self.r)
+        A = np.zeros((m+1, m+1)); A[:m, :m] = R.T @ R + 1e-12*np.eye(m)
+        A[:m, m] = 1; A[m, :m] = 1
+        b = np.zeros(m+1); b[m] = 1
+        try:
+            coeffs = np.linalg.solve(A, b)[:m]
+        except np.linalg.LinAlgError:
+            if self.guard:
+                coeffs = None
+            else:                       # historical fallback: equal weights
+                coeffs = np.ones(m) / m
+        if coeffs is not None:
+            proposal = sum(c*(x+self.mix*r) for c, x, r in zip(coeffs, self.x, self.r))
+            n = si.size
+            candidate = ((proposal[:n]+1j*proposal[n:2*n]).reshape(si.shape),
+                         (proposal[2*n:3*n]+1j*proposal[3*n:]).reshape(so.shape))
+            # _nonnegative_finite already allows a roundoff floor; a strict
+            # ">= 0" on top of it rejected roundoff-level negatives too
+            if not self.guard or _nonnegative_finite(*candidate):
+                return candidate
+        self.x.clear(); self.r.clear()
+        self.fallbacks += 1
+        return linear
+
+
+def _contact_current_pair(n, p, si_c, so_c, dE):
+    """Outward contact currents from diagonal populations and contact rates."""
+    return tuple(float(np.sum(np.real(so_c[:, j]*n[:, j] - si_c[:, j]*p[:, j])))
+                 * dE * _IE_PREFACTOR for j in (0, -1))
+
+
+def _current_ok(left, right, rtol, atol):
+    return rtol is None or bool(current_diagnostics(left, right, True, rtol, atol)["current_valid"])
 
 
 def _robust_solve(M, I_broadcast):
@@ -217,6 +300,9 @@ class Rank1KeldyshResult:
     I_right: float  # A, computed at the right contact (sign-flipped to be positive for L→R)
     iters_used: int
     converged: bool
+    physical_valid: bool = True
+    self_energy_residual: float = float("inf")
+    mixer_fallbacks: int = 0
 
 
 _HBAR = 1.054571817e-34
@@ -426,7 +512,10 @@ def run_rank1_keldysh_single_bias(
     tol: float = 1e-5,
     mix: float = 0.5,
     eta: float = 1e-12,
-    anderson_depth: int = 8,
+    anderson_depth: int = 0,
+    current_rtol: float | None = None,
+    legacy_reproduction: bool = False,
+    current_atol: float = 1e-14,
 ) -> Rank1KeldyshResult:
     """Run Patil's bulk-phonon SCBA at a single bias and return all observables.
 
@@ -445,17 +534,18 @@ def run_rank1_keldysh_single_bias(
     Parameters mirror Patil's MATLAB and the Python port; see
     ``tests/patil_reference_1d.py`` for a working example of input shapes.
 
-    ``anderson_depth`` sets the Anderson/DIIS history length used to mix the
-    phonon self-energy (default 8, the production setting). ``0`` gives plain
-    linear mixing, ``sigma <- (1-mix)*sigma + mix*sigma_new``, which is what
-    Patil's MATLAB and ``tests/patil_reference_1d.py`` do. The distinction
-    matters at strong coupling. On Patil's toy (chi = 1 on every site) the two
-    agree to ~1e-7 at D^2 = 0.001 eV^2, but at D^2 = 0.01 Anderson already
-    returns wrong-sign, unconverged currents at some biases where linear
-    mixing converges, and at D^2 = 0.1 it drifts to a non-physical state
-    (I_R ~3% of the reference) while linear mixing reproduces the reference
-    to 0.6% at the NDR peak. Check ``converged`` before trusting a result.
+    Linear mixing is the default. ``anderson_depth >= 2`` enables guarded
+    Anderson/DIIS: proposals with negative/nonfinite diagonal rates are rejected
+    and history is reset. The final rates, populations and self-energy residual
+    are checked again before reporting convergence. ``current_rtol`` optionally
+    requires contact conservation as well, continuing SCBA within ``max_iter``
+    even after the self-energy residual first meets ``tol``. This is useful for
+    small currents, for which a global self-energy norm is an insufficient test.
     """
+    if legacy_reproduction and current_rtol is not None:
+        raise ValueError("legacy_reproduction reproduces the archived stopping rule; "
+                         "it cannot also require current conservation")
+    mixer = _ScbaMixer(mix, anderson_depth, max_iter, tol, guard=not legacy_reproduction)
     Np = H_z.shape[0]
     NE = E_grid.size
     U_bias = bias_profile  # alias for clarity
@@ -483,30 +573,9 @@ def run_rank1_keldysh_single_bias(
     G_lesser = np.zeros_like(G_R_bare)
     G_greater = np.zeros_like(G_R_bare)
 
-    # Anderson mixing history (DIIS). We work with the diagonal elements
-    # only: sig_{in,out}_ph are diagonal in Patil's formulation, so we
-    # flatten the diagonals into a single real vector for the mixing.
     _diag = np.arange(Np)
-    _anderson_depth = anderson_depth  # history vectors kept; 0 = plain linear mixing
-    _x_hist: list[np.ndarray] = []  # input vectors
-    _r_hist: list[np.ndarray] = []  # residual vectors
-
-    def _pack(si, so):
-        """Pack diagonal elements of sig_in/sig_out into a 1D real vector."""
-        di = si[:, _diag, _diag].ravel()
-        do = so[:, _diag, _diag].ravel()
-        return np.concatenate([di.real, di.imag, do.real, do.imag])
-
-    def _unpack(vec, template):
-        """Unpack 1D real vector back into (NE, Np, Np) diagonal arrays."""
-        n = NE * Np
-        di = vec[:n] + 1j * vec[n:2*n]
-        do = vec[2*n:3*n] + 1j * vec[3*n:]
-        si = np.zeros_like(template)
-        so = np.zeros_like(template)
-        si[:, _diag, _diag] = di.reshape(NE, Np)
-        so[:, _diag, _diag] = do.reshape(NE, Np)
-        return si, so
+    si_c = sig_in_L[:, _diag, _diag] + sig_in_R[:, _diag, _diag]
+    so_c = sig_out_L[:, _diag, _diag] + sig_out_R[:, _diag, _diag]
 
     # Precompute quantities that don't change per iteration.
     eye = np.eye(Np, dtype=complex)
@@ -563,51 +632,31 @@ def run_rank1_keldysh_single_bias(
         )
         change = abs_change / max(norm_old, 1e-30)
 
-        # --- Anderson mixing (DIIS) ---
-        # x = current input, f(x) = sig_new (output of SCBA map), r = f(x) - x
-        x_vec = _pack(sig_in_ph, sig_out_ph)
-        f_vec = _pack(sig_in_new, sig_out_new)
-        r_vec = f_vec - x_vec
-
-        _x_hist.append(x_vec)
-        _r_hist.append(r_vec)
-        if len(_x_hist) > _anderson_depth:
-            _x_hist.pop(0)
-            _r_hist.pop(0)
-
-        m = len(_r_hist)
-        if m >= 2:
-            # Build the residual overlap matrix and solve for optimal coeffs.
-            # min ||Σ α_i r_i||² s.t. Σ α_i = 1
-            # Equivalent to solving [R^T R, 1; 1^T, 0] [α; λ] = [0; 1]
-            R = np.column_stack(_r_hist)  # (n, m)
-            RtR = R.T @ R
-            # Tikhonov regularization for numerical stability
-            RtR += 1e-12 * np.eye(m)
-            # Constrained least squares via Lagrange multiplier
-            A = np.zeros((m + 1, m + 1))
-            A[:m, :m] = RtR
-            A[:m, m] = 1.0
-            A[m, :m] = 1.0
-            b = np.zeros(m + 1)
-            b[m] = 1.0
-            try:
-                coeffs = np.linalg.solve(A, b)[:m]
-            except np.linalg.LinAlgError:
-                coeffs = np.ones(m) / m  # fallback to equal weights
-
-            # Anderson update: x_next = Σ α_i (x_i + β * r_i)
-            x_next = sum(c * (x + mix * r) for c, x, r
-                         in zip(coeffs, _x_hist, _r_hist))
-            sig_in_ph, sig_out_ph = _unpack(x_next, G_R_bare)
-        else:
-            # Not enough history yet — use simple linear mixing.
-            sig_in_ph = (1.0 - mix) * sig_in_ph + mix * sig_in_new
-            sig_out_ph = (1.0 - mix) * sig_out_ph + mix * sig_out_new
-
-        if change < tol:
+        can_stop = change < tol
+        if legacy_reproduction:
+            # Archived order: mix first, then stop on the pre-mix change. The
+            # returned Sigma is therefore one mixing step past the tested one.
+            si, so = mixer.update(sig_in_ph[:, _diag, _diag], sig_out_ph[:, _diag, _diag],
+                                  sig_in_new[:, _diag, _diag], sig_out_new[:, _diag, _diag])
+            sig_in_ph[:, _diag, _diag] = si
+            sig_out_ph[:, _diag, _diag] = so
+            if can_stop:
+                converged = True
+                break
+            continue
+        if can_stop and current_rtol is not None:
+            nd = G_lesser[:, _diag, _diag].real
+            gd = G_R[:, _diag, _diag]
+            pd = (1j*(gd-gd.conj())).real - nd
+            can_stop = _current_ok(*_contact_current_pair(nd, pd, si_c, so_c, E_grid[1]-E_grid[0]),
+                                   current_rtol, current_atol)
+        if can_stop:
             converged = True
             break
+        si, so = mixer.update(sig_in_ph[:, _diag, _diag], sig_out_ph[:, _diag, _diag],
+                              sig_in_new[:, _diag, _diag], sig_out_new[:, _diag, _diag])
+        sig_in_ph[:, _diag, _diag] = si
+        sig_out_ph[:, _diag, _diag] = so
 
     # ── FINAL PASS: recompute G with converged/updated phonon self-energy ──
     # Without this, FBA (max_iter=1) computes phonon Σ from ballistic G but
@@ -656,6 +705,13 @@ def run_rank1_keldysh_single_bias(
     I_right = I1 * dE * _IE_PREFACTOR
     I_left = I2 * dE * _IE_PREFACTOR
 
+    si_check, so_check = fba_phonon_sigma_diag(G_lesser[:, _diag, _diag], G_greater[:, _diag, _diag], chi_diag,
+        D0_sq_per_mode, hnu_idx_per_mode, N_bose_per_mode, chi_per_mode)
+    residual = _relative_sigma_residual(sig_in_ph[:, _diag, _diag], sig_out_ph[:, _diag, _diag], si_check, so_check)
+    physical = _nonnegative_finite(sig_in_ph[:, _diag, _diag], sig_out_ph[:, _diag, _diag], n_arr[:, _diag, _diag], p_arr[:, _diag, _diag])
+    if not legacy_reproduction:
+        converged = bool(converged and physical and residual < tol
+                         and _current_ok(I_left, I_right, current_rtol, current_atol))
     return Rank1KeldyshResult(
         V=V,
         E_grid=E_grid,
@@ -669,7 +725,8 @@ def run_rank1_keldysh_single_bias(
         I_left=I_left,
         I_right=I_right,
         iters_used=iters_used,
-        converged=converged,
+        converged=converged, physical_valid=physical, self_energy_residual=residual,
+        mixer_fallbacks=mixer.fallbacks,
     )
 
 
@@ -719,7 +776,9 @@ def run_rank1_keldysh_single_bias_fast(
     tol: float = 1e-5,
     mix: float = 0.5,
     eta: float = 1e-12,
-    anderson_depth: int = 8,
+    anderson_depth: int = 0,
+    current_rtol: float | None = None,
+    current_atol: float = 1e-14,
 ) -> Rank1KeldyshResult:
     """Numerically identical to :func:`run_rank1_keldysh_single_bias`, ~5x faster.
 
@@ -745,6 +804,7 @@ def run_rank1_keldysh_single_bias_fast(
     is bias-independent, so it is built once and only its diagonal updated per
     iteration; and ``|G|^2`` is formed once and reused for both G^< and G^>.
     """
+    mixer = _ScbaMixer(mix, anderson_depth, max_iter, tol)
     Np = H_z.shape[0]
     NE = E_grid.size
     U_bias = bias_profile
@@ -784,19 +844,6 @@ def run_rank1_keldysh_single_bias_fast(
 
     si_ph = np.zeros((NE, Np), dtype=complex)
     so_ph = np.zeros((NE, Np), dtype=complex)
-    _x_hist: list[np.ndarray] = []
-    _r_hist: list[np.ndarray] = []
-
-    def _pack(a, b):
-        return np.concatenate([a.real.ravel(), a.imag.ravel(),
-                               b.real.ravel(), b.imag.ravel()])
-
-    def _unpack(v):
-        n = NE * Np
-        a = (v[:n] + 1j * v[n:2 * n]).reshape(NE, Np)
-        b = (v[2 * n:3 * n] + 1j * v[3 * n:]).reshape(NE, Np)
-        return a, b
-
     iters_used = 0
     converged = False
     G_R = None
@@ -821,32 +868,17 @@ def run_rank1_keldysh_single_bias_fast(
         norm_old = float(np.sum(np.abs(si_ph))) + float(np.sum(np.abs(so_ph)))
         change = abs_change / max(norm_old, 1e-30)
 
-        x_vec = _pack(si_ph, so_ph)
-        f_vec = _pack(si_new, so_new)
-        r_vec = f_vec - x_vec
-        _x_hist.append(x_vec); _r_hist.append(r_vec)
-        if len(_x_hist) > anderson_depth:
-            _x_hist.pop(0); _r_hist.pop(0)
-        m = len(_r_hist)
-        if m >= 2:
-            R = np.column_stack(_r_hist)
-            RtR = R.T @ R + 1e-12 * np.eye(m)
-            A = np.zeros((m + 1, m + 1)); A[:m, :m] = RtR
-            A[:m, m] = 1.0; A[m, :m] = 1.0
-            bvec = np.zeros(m + 1); bvec[m] = 1.0
-            try:
-                coeffs = np.linalg.solve(A, bvec)[:m]
-            except np.linalg.LinAlgError:
-                coeffs = np.ones(m) / m
-            x_next = sum(c * (x + mix * r) for c, x, r in zip(coeffs, _x_hist, _r_hist))
-            si_ph, so_ph = _unpack(x_next)
-        else:
-            si_ph = (1.0 - mix) * si_ph + mix * si_new
-            so_ph = (1.0 - mix) * so_ph + mix * so_new
-
-        if change < tol:
+        can_stop = change < tol
+        if can_stop and current_rtol is not None:
+            gd = G_R[:, idx, idx]
+            pd = (1j*(gd-gd.conj())).real - Gl_d.real
+            can_stop = _current_ok(*_contact_current_pair(Gl_d.real, pd,
+                sig_in_L_d+sig_in_R_d, sig_out_L_d+sig_out_R_d, E_grid[1]-E_grid[0]),
+                current_rtol, current_atol)
+        if can_stop:
             converged = True
             break
+        si_ph, so_ph = mixer.update(si_ph, so_ph, si_new, so_new)
 
     # FINAL PASS: rebuild G with the current Sigma and materialise the full
     # G^< / G^> once, so the returned object matches the reference exactly.
@@ -873,12 +905,19 @@ def run_rank1_keldysh_single_bias_fast(
                               - sig_in_R[:, -1, -1] * p_arr[:, -1, -1])))
     I2 = float(np.sum(np.real(sig_out_L[:, 0, 0] * n_arr[:, 0, 0]
                               - sig_in_L[:, 0, 0] * p_arr[:, 0, 0])))
+    si_check, so_check = fba_phonon_sigma_diag(G_lesser[:, idx, idx], G_greater[:, idx, idx], chi_diag,
+        D0_sq_per_mode, hnu_idx_per_mode, N_bose_per_mode, chi_per_mode)
+    residual = _relative_sigma_residual(si_ph, so_ph, si_check, so_check)
+    physical = _nonnegative_finite(si_ph, so_ph, n_arr[:, idx, idx], p_arr[:, idx, idx])
+    converged = bool(converged and physical and residual < tol
+                     and _current_ok(I2*dE*_IE_PREFACTOR, I1*dE*_IE_PREFACTOR, current_rtol, current_atol))
     return Rank1KeldyshResult(
         V=V, E_grid=E_grid, G_R=G_R, G_lesser=G_lesser, G_greater=G_greater,
         sigma_in_ph=sig_in_ph, sigma_out_ph=sig_out_ph,
         Gam_L=Gam_L, Gam_R=Gam_R,
         I_left=I2 * dE * _IE_PREFACTOR, I_right=I1 * dE * _IE_PREFACTOR,
-        iters_used=iters_used, converged=converged,
+        iters_used=iters_used, converged=converged, physical_valid=physical, self_energy_residual=residual,
+        mixer_fallbacks=mixer.fallbacks,
     )
 
 
@@ -895,6 +934,9 @@ class Rank1DiagResult:
     I_right: float
     iters_used: int
     converged: bool
+    physical_valid: bool = True
+    self_energy_residual: float = float("inf")
+    mixer_fallbacks: int = 0
 
 
 def run_rank1_keldysh_single_bias_lowmem(
@@ -916,7 +958,9 @@ def run_rank1_keldysh_single_bias_lowmem(
     tol: float = 1e-5,
     mix: float = 0.5,
     eta: float = 1e-12,
-    anderson_depth: int = 8,
+    anderson_depth: int = 0,
+    current_rtol: float | None = None,
+    current_atol: float = 1e-14,
     chunk: int = 64,
     sigma_init: tuple[np.ndarray, np.ndarray] | None = None,
     method: str = "dense",
@@ -940,6 +984,7 @@ def run_rank1_keldysh_single_bias_lowmem(
     It needs a tridiagonal Hamiltonian with one hopping value, which
     build_stack produces; every self-energy here is diagonal.
     """
+    mixer = _ScbaMixer(mix, anderson_depth, max_iter, tol)
     Np = H_z.shape[0]
     NE = E_grid.size
     idx = np.arange(Np)
@@ -996,18 +1041,20 @@ def run_rank1_keldysh_single_bias_lowmem(
             S_z = q_{z+1} (s_{z+1} + S_{z+1}),   T_z = q_z (T_{z-1} + |G_{z-1}|^2 s_{z-1}),
         two O(Np) recursions instead of forming |G|^2.
         """
-        a = E_arr[:, None] - h_d[None, :] + 0.5j * (si_ph + so_ph)
+        # Recursion advances along z and reads an entire energy column each
+        # step. Keep those columns contiguous on fine energy grids.
+        a = np.asfortranarray(E_arr[:, None] - h_d[None, :] + 0.5j * (si_ph + so_ph))
         a[:, 0] -= sigL_c
         a[:, -1] -= sigR_c
         h2 = hop * hop
-        gR = np.empty((NE, Np), dtype=complex); gL = np.empty((NE, Np), dtype=complex)
+        gR = np.empty_like(a); gL = np.empty_like(a)
         gR[:, -1] = 1.0 / a[:, -1]
         for k in range(Np - 2, -1, -1):
             gR[:, k] = 1.0 / (a[:, k] - h2 * gR[:, k + 1])
         gL[:, 0] = 1.0 / a[:, 0]
         for k in range(1, Np):
             gL[:, k] = 1.0 / (a[:, k] - h2 * gL[:, k - 1])
-        dl = np.zeros((NE, Np), dtype=complex); dr = np.zeros((NE, Np), dtype=complex)
+        dl = np.zeros_like(a); dr = np.zeros_like(a)
         dl[:, 1:] = h2 * gL[:, :-1]
         dr[:, :-1] = h2 * gR[:, 1:]
         GRd = 1.0 / (a - dl - dr)
@@ -1015,7 +1062,8 @@ def run_rank1_keldysh_single_bias_lowmem(
         q = np.abs(hop * gR) ** 2
 
         def contract(src):
-            S = np.zeros((NE, Np)); T = np.zeros((NE, Np))
+            src = np.asfortranarray(src)
+            S = np.zeros_like(a, dtype=float); T = np.zeros_like(a, dtype=float)
             for z in range(Np - 2, -1, -1):
                 S[:, z] = q[:, z + 1] * (src[:, z + 1] + S[:, z + 1])
             for z in range(1, Np):
@@ -1037,44 +1085,28 @@ def run_rank1_keldysh_single_bias_lowmem(
     else:
         si_ph = np.array(sigma_init[0], dtype=complex)
         so_ph = np.array(sigma_init[1], dtype=complex)
-    x_hist: list[np.ndarray] = []
-    r_hist: list[np.ndarray] = []
-    pack = lambda a, b: np.concatenate([a.real.ravel(), a.imag.ravel(), b.real.ravel(), b.imag.ravel()])
-
-    def unpack(v):
-        n = NE * Np
-        return ((v[:n] + 1j * v[n:2 * n]).reshape(NE, Np),
-                (v[2 * n:3 * n] + 1j * v[3 * n:]).reshape(NE, Np))
+    if (si_ph.shape != (NE, Np) or so_ph.shape != (NE, Np)
+            or not _nonnegative_finite(si_ph, so_ph)
+            or np.min(si_ph.real) < 0 or np.min(so_ph.real) < 0):
+        raise ValueError("SCBA warm start must contain finite nonnegative rates on this grid")
 
     iters_used, converged = 0, False
     for it in range(max_iter):
         iters_used = it + 1
-        Gl, Gg, _ = sweep(si_ph, so_ph)
+        Gl, Gg, GRd = sweep(si_ph, so_ph)
         si_new, so_new = fba_phonon_sigma_diag(Gl, Gg, chi_diag, D0_sq_per_mode,
                                                hnu_idx_per_mode, N_bose_per_mode, chi_per_mode)
         change = ((float(np.sum(np.abs(si_new - si_ph))) + float(np.sum(np.abs(so_new - so_ph))))
                   / max(float(np.sum(np.abs(si_ph))) + float(np.sum(np.abs(so_ph))), 1e-30))
-        x_vec, f_vec = pack(si_ph, so_ph), pack(si_new, so_new)
-        x_hist.append(x_vec); r_hist.append(f_vec - x_vec)
-        if len(x_hist) > anderson_depth:
-            x_hist.pop(0); r_hist.pop(0)
-        m = len(r_hist)
-        if m >= 2:
-            R = np.column_stack(r_hist)
-            A = np.zeros((m + 1, m + 1)); A[:m, :m] = R.T @ R + 1e-12 * np.eye(m)
-            A[:m, m] = 1.0; A[m, :m] = 1.0
-            bvec = np.zeros(m + 1); bvec[m] = 1.0
-            try:
-                coeffs = np.linalg.solve(A, bvec)[:m]
-            except np.linalg.LinAlgError:
-                coeffs = np.ones(m) / m
-            si_ph, so_ph = unpack(sum(c * (x + mix * r) for c, x, r in zip(coeffs, x_hist, r_hist)))
-        else:
-            si_ph = (1.0 - mix) * si_ph + mix * si_new
-            so_ph = (1.0 - mix) * so_ph + mix * so_new
-        if change < tol:
+        can_stop = change < tol
+        if can_stop and current_rtol is not None:
+            pd = (1j*(GRd-GRd.conj())).real - Gl.real
+            can_stop = _current_ok(*_contact_current_pair(Gl.real, pd, si_c, so_c, E_grid[1]-E_grid[0]),
+                                   current_rtol, current_atol)
+        if can_stop:
             converged = True
             break
+        si_ph, so_ph = mixer.update(si_ph, so_ph, si_new, so_new)
 
     # FINAL PASS, as in the fast solver: observables from the final Sigma.
     Gl, Gg, GRd = sweep(si_ph, so_ph)
@@ -1083,7 +1115,14 @@ def run_rank1_keldysh_single_bias_lowmem(
     dE = E_grid[1] - E_grid[0]
     I1 = float(np.sum(np.real(so_c[:, -1] * n[:, -1] - si_c[:, -1] * p[:, -1])))
     I2 = float(np.sum(np.real(so_c[:, 0] * n[:, 0] - si_c[:, 0] * p[:, 0])))
+    si_check, so_check = fba_phonon_sigma_diag(Gl, Gg, chi_diag,
+        D0_sq_per_mode, hnu_idx_per_mode, N_bose_per_mode, chi_per_mode)
+    residual = _relative_sigma_residual(si_ph, so_ph, si_check, so_check)
+    physical = _nonnegative_finite(si_ph, so_ph, n, p)
+    converged = bool(converged and physical and residual < tol
+                     and _current_ok(I2*dE*_IE_PREFACTOR, I1*dE*_IE_PREFACTOR, current_rtol, current_atol))
     return Rank1DiagResult(V=V, E_grid=E_grid, n_diag=n, p_diag=p,
                            sigma_in_ph=si_ph, sigma_out_ph=so_ph,
                            I_left=I2 * dE * _IE_PREFACTOR, I_right=I1 * dE * _IE_PREFACTOR,
-                           iters_used=iters_used, converged=converged)
+                           iters_used=iters_used, converged=converged, physical_valid=physical, self_energy_residual=residual,
+        mixer_fallbacks=mixer.fallbacks)

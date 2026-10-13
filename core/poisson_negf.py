@@ -266,6 +266,7 @@ def compute_density_prefactor(
     ND: int = 1,
     scba_max_iter: int = 10,
     scba_mix: float = 0.4,
+    scba_anderson_depth: int = 0,
     scba_tol: float = 1e-5,
     eta: float = 1e-12,
 ) -> float:
@@ -280,7 +281,7 @@ def compute_density_prefactor(
         Ef=Ef, kT=kT, chi_diag=chi_diag, D0_sq_per_mode=D0_sq_per_mode,
         hnu_idx_per_mode=hnu_idx_per_mode, N_bose_per_mode=N_bose_per_mode,
         chi_per_mode=chi_per_mode, max_iter=scba_max_iter, tol=scba_tol,
-        mix=scba_mix, eta=eta,
+        mix=scba_mix, eta=eta, anderson_depth=scba_anderson_depth,
     )
     dE = float(E_grid[1] - E_grid[0])
     N_raw = extract_density_1d(res.G_lesser, dE)
@@ -341,6 +342,8 @@ def run_self_consistent_bias(
     ND: int = 1,
     scba_max_iter: int = 500,
     scba_mix: float = 0.4,
+    scba_anderson_depth: int = 0,
+    scba_current_rtol: float | None = None,
     scba_tol: float = 1e-5,
     eta: float = 1e-12,
     poisson_max_iter: int = 1000,
@@ -488,7 +491,8 @@ def run_self_consistent_bias(
             Ef=Ef, kT=kT, chi_diag=chi_diag, D0_sq_per_mode=D0_sq_per_mode,
             hnu_idx_per_mode=hnu_idx_per_mode, N_bose_per_mode=N_bose_per_mode,
             chi_per_mode=chi_per_mode, max_iter=scba_max_iter, tol=scba_tol,
-            mix=scba_mix, eta=eta,
+            mix=scba_mix, eta=eta, anderson_depth=scba_anderson_depth,
+            current_rtol=scba_current_rtol,
         )
         if density_mode == "physical":
             if density_E_grid is not None:

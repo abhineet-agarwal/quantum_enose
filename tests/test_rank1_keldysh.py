@@ -183,7 +183,7 @@ class TestAndersonMatchesLinearAtWeakCoupling(unittest.TestCase):
                     D0_sq_per_mode=(0.001, 0.001), hnu_idx_per_mode=ip["hnu_idx"],
                     N_bose_per_mode=ip["N_bose"], tol=1e-8, mix=0.4, max_iter=400,
                 )
-                a = run_rank1_keldysh_single_bias(**kw)
+                a = run_rank1_keldysh_single_bias(**kw, anderson_depth=8)
                 lin = run_rank1_keldysh_single_bias(**kw, anderson_depth=0)
                 self.assertTrue(a.converged and lin.converged,
                                 f"V={V}: anderson conv={a.converged}, linear conv={lin.converged}")

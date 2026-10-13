@@ -44,7 +44,7 @@ def sweep(args, direction, Vs, U, sigma, ph):
     for V in Vs:
         key = f"{V*1e3:.0f}"
         if key in db:
-            if (db[key].get("info", {}).get("validation_version") != 2
+            if (db[key].get("info", {}).get("validation_version") != 3
                     or not db[key].get("converged", False)):
                 raise RuntimeError(f"Cached bias {key} lacks current validation; use a fresh --out-dir")
             U, sigma = db[key]["U"], None

@@ -17,9 +17,9 @@ import run.sc_scatter_sweep as sw
 MOL = sys.argv[1] if len(sys.argv) > 1 else "Mol_A"
 D2 = float(sys.argv[2]) if len(sys.argv) > 2 else 0.015
 VS = [int(x) for x in sys.argv[3:]] or [320, 544, 576, 608, 960, 1472, 1504, 1536]
-TIGHT = dict(scba_tol=1e-5, poisson_tol=1e-5, final_tol=1e-7, final_max_iter=4000)
+TIGHT = dict(scba_tol=1e-5, poisson_tol=1e-5, final_tol=1e-9, final_max_iter=4000)
 D = os.path.abspath(os.path.join(os.path.dirname(sw.bc.OUT), "..", "2026-10-07"))
-OUT = os.path.join(D, f"feedback_check_D2{D2:g}_{MOL}_validation_v2.npz")
+OUT = os.path.join(D, f"feedback_check_D2{D2:g}_{MOL}_validation_v3.npz")
 
 if __name__ == "__main__":
     sw.bc.POISSON_MAX_ITER = 300
@@ -30,6 +30,8 @@ if __name__ == "__main__":
     for Vm in VS:
         key = str(Vm)
         if key in db:
+            if not all(r.get("numerical_valid", False) for r in db[key]["rows"].values()):
+                raise RuntimeError(f"Preserving failed cached pair {key}; choose a fresh output")
             continue
         V = Vm / 1e3; U0 = base[key].item()["U"]; t = time.time(); row = {}
         for m in ("Baseline", MOL):
@@ -48,4 +50,6 @@ if __name__ == "__main__":
               f"fixed-U {f['dI']*1e9:+8.4f} ({100*f['dI']/abs(f['Baseline']['I']):+6.2f} %)   "
               f"dU_well {db[key]['dU_well']*1e3:+6.2f} meV  {'conv' if conv else 'NOT CONV'} "
               f"(Poisson {row['Baseline']['poisson_iters']}/{row[MOL]['poisson_iters']} it)  [{db[key]['secs']/60:.1f} min]", flush=True)
+        if not conv:
+            raise RuntimeError(f"Paired solve failed numerical checks at {Vm} mV; diagnostics saved to {OUT}")
     print("[done]", flush=True)

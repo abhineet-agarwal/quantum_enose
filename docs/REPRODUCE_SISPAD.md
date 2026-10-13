@@ -40,7 +40,12 @@ Fig 4 = Mol_A temperature dependence.
 ## Method & exact parameters
 
 Rank-1 projected NEGF-SCBA, single longitudinal mode (Nm=1).
-Solver: `core/scba_rank1_keldysh.py` (Anderson/DIIS mixing, depth M=8, built in).
+Solver: `core/scba_rank1_keldysh.py` in **legacy reproduction mode**
+(`--legacy-reproduction` / `legacy_reproduction=True`): unguarded Anderson/DIIS,
+depth M=8, mix-then-stop on the self-energy change, no in-loop current check.
+These are the rules the golden data was made with; the production default
+(linear mixing, guarded Anderson, conservation required) gives slightly
+different numbers. See "Archived points under-converged in current" below.
 Driver: `run/run_rank1_sweep.py`.
 
 | Parameter | Value | Note |
@@ -162,6 +167,25 @@ does NOT reproduce the published Fig 4b, which used the analytic d2I field
   not used by any `-9` figure). The rank-1 Keldysh wrapper currently gives
   I_R≈1.7e-11 A at the Patil NDR peak vs the 5.7e-10 A reference; this regressed
   before the 2026-05-27 archive reorg and is unrelated to it.
+
+## Archived points under-converged in current (2026-10-14)
+
+The golden sweeps stopped on the self-energy change alone (tol 1e-4), so some
+points left large left/right contact imbalances. Legacy mode reproduces them
+exactly; the modern checks flag them, which is why `reproduce_sispad.sh`
+passes `--allow-unconverged`. Re-solved with the production rules (guarded
+Anderson, conservation to 0.2 %), Mol_AB changes by:
+
+| Bias | Archived I_R (imbalance) | Production rules (imbalance) | Change |
+|---|---|---|---|
+| 288 mV | 1.779121 nA (0.38 %) | 1.783415 nA (0.13 %) | +0.24 % |
+| 304 mV | 2.278329 nA (1.98 %) | 2.319751 nA (0.19 %) | +1.82 % |
+| 320 mV | 3.105590 nA (0.50 %) | 3.118971 nA (0.05 %) | +0.43 % |
+
+The published curves are therefore accurate to ~2 % at the worst-conserved
+points, not to the 1e-4 SCBA tolerance. The changes are smooth in bias over
+these points but have not been propagated through d2I/dV2; new results should
+use the production rules.
 
 ## Repo layout note (2026-05-27 archive reorg)
 

@@ -227,6 +227,7 @@ def run_sweep(
     sigma_mol_nm: float = 0.3,
     scba_max_iter: int = 500,
     scba_mix: float = 0.3,
+    anderson_depth: int = 0,
     scba_tol: float = 1e-7,
     use_poisson: bool = False,
     poisson_max_iter: int = 1000,
@@ -244,6 +245,8 @@ def run_sweep(
     # the default stays on the reference path that the bit-exact SISPAD
     # reproduction was verified against.
     fast_solver: bool = False,
+    scba_current_rtol: float | None = 2e-3,
+    legacy_reproduction: bool = False,
     donor_density: float | None = None,
     allow_unconverged: bool = False,
     out_dir: str | None = None,
@@ -253,6 +256,14 @@ def run_sweep(
     a_m = a_nm * 1e-9
     if T_K <= 0 or dE <= 0 or V_points < 3 or V_max <= V_min:
         raise ValueError("Require T > 0, dE > 0, at least three biases and V_max > V_min")
+    if legacy_reproduction:
+        # Archived SISPAD path only: unguarded Anderson, mix-then-stop, no
+        # in-loop conservation requirement -- the rules the golden data used.
+        if fast_solver or use_poisson or transverse:
+            raise ValueError("legacy_reproduction applies to the archived dense, "
+                             "fixed-potential, single-mode path only")
+        scba_current_rtol = None
+    _legacy = {"legacy_reproduction": True} if legacy_reproduction else {}
     m_eff_kg = MATERIALS["ZnO"]["m_eff"] * _M0
     if donor_density is not None:
         Ef = fermi_level_from_density(donor_density, kT, m_eff_kg)
@@ -322,7 +333,8 @@ def run_sweep(
             chi_diag=chi_default, D0_sq_per_mode=D0_sq, hnu_idx_per_mode=hnu_idx,
             N_bose_per_mode=N_bose, chi_per_mode=chi_list, N_D=N_D,
             contact_mask=contact_mask, NS=NS, ND=ND,
-            scba_max_iter=scba_max_iter, scba_mix=scba_mix, scba_tol=scba_tol,
+            scba_max_iter=scba_max_iter, scba_mix=scba_mix,
+            scba_anderson_depth=anderson_depth, scba_tol=scba_tol,
             eta=eta,
         )
         # Sensitivity knob: scale the equilibrium-calibrated prefactor to probe
@@ -347,6 +359,7 @@ def run_sweep(
             Ef=Ef, kT=kT, chi_diag=chi_default, D0_sq_per_mode=D0_sq,
             hnu_idx_per_mode=hnu_idx, N_bose_per_mode=N_bose, chi_per_mode=chi_list,
             max_iter=scba_max_iter, tol=scba_tol, mix=scba_mix, eta=eta,
+            anderson_depth=anderson_depth, current_rtol=scba_current_rtol,
         )
         n0 = physical_transverse_density(r0.G_R, r0.Gam_L, r0.Gam_R, E_grid,
                                          Ef, Ef, kT, m_eff_kg, a_m)
@@ -387,6 +400,9 @@ def run_sweep(
     d2I = np.zeros(V_points)
     iters = np.zeros(V_points, dtype=int)
     converged = np.zeros(V_points, dtype=bool)
+    physical_valid = np.zeros(V_points, dtype=bool)
+    sigma_residual = np.full(V_points, np.inf)
+    mixer_fallbacks = np.zeros(V_points, dtype=int)
     # Self-consistent profiles (only filled when use_poisson).
     U_profiles = np.zeros((V_points, Np)) if use_poisson else None
     n_profiles = np.zeros((V_points, Np)) if use_poisson else None
@@ -406,6 +422,7 @@ def run_sweep(
                 density_prefactor=density_prefactor, contact_mask=contact_mask,
                 NS=NS, ND=ND,
                 scba_max_iter=scba_max_iter, scba_mix=scba_mix,
+                scba_anderson_depth=anderson_depth, scba_current_rtol=scba_current_rtol,
                 scba_tol=scba_tol, eta=eta,
                 poisson_max_iter=poisson_max_iter, poisson_tol=poisson_tol,
                 kT_screen=poisson_kT_screen, bc_scheme=poisson_bc,
@@ -443,8 +460,8 @@ def run_sweep(
                 chi_per_mode=chi_list,
                 max_iter=scba_max_iter,
                 tol=scba_tol,
-                mix=scba_mix,
-                eta=eta,
+                mix=scba_mix, anderson_depth=anderson_depth, current_rtol=scba_current_rtol,
+                eta=eta, **_legacy,
             )
         I_L[i] = res.I_left
         I_R[i] = res.I_right
@@ -463,6 +480,7 @@ def run_sweep(
                     D0_sq_per_mode=D0_sq, hnu_idx_per_mode=hnu_idx,
                     N_bose_per_mode=N_bose, chi_per_mode=chi_list,
                     max_iter=scba_max_iter, tol=scba_tol, mix=scba_mix, eta=eta,
+                    anderson_depth=anderson_depth, current_rtol=scba_current_rtol,
                 )
                 transverse_valid[i] &= bool(current_diagnostics(
                     node.I_left, node.I_right, node.converged)["current_valid"])
@@ -486,6 +504,9 @@ def run_sweep(
         d2I[i] = analytic_d2idv2_inelastic_at_bias(res, kT=kT, E_F=Ef)
         iters[i] = res.iters_used
         converged[i] = res.converged
+        physical_valid[i] = res.physical_valid
+        sigma_residual[i] = res.self_energy_residual
+        mixer_fallbacks[i] = res.mixer_fallbacks
         if verbose and (i % 10 == 0 or i == V_points - 1):
             elapsed = time.time() - t_start
             eta_s = elapsed / max(1, i + 1) * (V_points - i - 1)
@@ -506,7 +527,9 @@ def run_sweep(
         numerical_valid &= poisson_converged
     save_kw = dict(
         V=V_grid, I_L=I_L, I_R=I_R, d2I=d2I,
-        iters=iters, converged=converged,
+        iters=iters, converged=converged, physical_valid=physical_valid,
+        self_energy_residual=sigma_residual, mixer_fallbacks=mixer_fallbacks,
+        solver_validation_version=3,
         E_grid=E_grid, z_nm=z_nm, UB=UB, chi_used=chi_default,
         device=device, molecule=molecule,
         T_K=T_K, Ef=Ef, kT=kT, t0=t0, a_nm=a_nm,
@@ -526,6 +549,9 @@ def run_sweep(
         transverse=transverse, transverse_nodes=transverse_nodes,
         transverse_emax_kt=transverse_emax_kt,
         scba_max_iter=scba_max_iter, scba_mix=scba_mix, scba_tol=scba_tol,
+        anderson_depth=anderson_depth,
+        scba_current_rtol=np.nan if scba_current_rtol is None else scba_current_rtol,
+        legacy_reproduction=legacy_reproduction,
         eta=eta, sigma_mol_nm=sigma_mol_nm,
         use_poisson=use_poisson,
     )
@@ -568,6 +594,14 @@ def main():
     ap.add_argument("--dE", type=float, default=0.002)
     ap.add_argument("--scba-max-iter", type=int, default=500)
     ap.add_argument("--scba-mix", type=float, default=0.3)
+    ap.add_argument("--anderson-depth", type=int, default=0,
+                    help="0: linear SCBA mixing (default); >=2: guarded Anderson history")
+    ap.add_argument("--scba-current-rtol", type=float, default=2e-3,
+                    help="contact-current conservation required before the SCBA may stop "
+                         "(0 = not required)")
+    ap.add_argument("--legacy-reproduction", action="store_true",
+                    help="archived SISPAD rules: unguarded Anderson, mix-then-stop, no "
+                         "conservation requirement. For reproducing old data only.")
     ap.add_argument("--scba-tol", type=float, default=1e-7)
     filling = ap.add_mutually_exclusive_group()
     filling.add_argument("--donor-density", type=float,
@@ -625,7 +659,7 @@ def main():
             T_K=args.T, Ef=args.Ef,
             donor_density=args.donor_density, allow_unconverged=args.allow_unconverged,
             scba_max_iter=args.scba_max_iter, scba_mix=args.scba_mix,
-            scba_tol=args.scba_tol,
+            scba_tol=args.scba_tol, anderson_depth=args.anderson_depth,
             use_poisson=args.poisson, poisson_max_iter=args.poisson_max_iter,
             poisson_tol=args.poisson_tol,
             poisson_kT_screen=args.poisson_kt_screen,
@@ -635,6 +669,8 @@ def main():
             transverse=args.transverse, transverse_nodes=args.transverse_nodes,
             transverse_emax_kt=args.transverse_emax_kt,
             fast_solver=args.fast_solver,
+            scba_current_rtol=args.scba_current_rtol or None,
+            legacy_reproduction=args.legacy_reproduction,
             out_dir=args.out_dir,
         )
 

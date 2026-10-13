@@ -5,7 +5,7 @@ The implemented production model is **one transverse mode, one spin, with
 local longitudinal phonon self-energies**. The separate rank-1 Dyson algebra
 is tested, but a multimode Keldysh scattering solver is not implemented.
 
-**Validation status (2026-10-12):** archived SISPAD currents reproduce exactly,
+**Validation status (2026-10-13):** archived SISPAD currents reproduce within the historical gate's tolerance,
 but the molecular second derivative fails energy/bias-grid refinement. The
 69 nA peak is per mode per spin, not the current of a 10 µm × 10 µm pixel.
 The newer coupled Poisson work uses an approximate windowed single-mode-ratio
@@ -66,6 +66,22 @@ tolerance; a small damped step alone no longer passes. Failing sweeps save
 explicit diagnostic flags and exit nonzero. `--allow-unconverged` is available
 for diagnostics or historical reproduction. Figure generators require spectral
 validation or an explicit historical/diagnostic option and visible labelling.
+
+SCBA now defaults to linear mixing in every implementation. Optional
+`--anderson-depth 8` uses guarded extrapolation: negative/nonfinite rates are
+rejected, and returned rates, populations and the self-energy residual are
+checked before convergence is accepted. Final transport solves also continue
+until the contact currents balance. The fixed-potential spacer check uses a
+tighter 1e-9 self-energy tolerance and fresh output with explicit acceptance:
+
+```bash
+python run/fixedU_fingerprint.py Mol_A .015 --biases 576 1504 --dE .0005
+```
+
+Its archived input potentials are held fixed; a passing transport check does
+not certify those potentials or the derivative. Spectrum checks also support
+`--energy-offset .5` to test grid alignment; passing one alignment does not
+establish independence from alignment.
 
 For a temperature series at fixed fully ionized contact density:
 

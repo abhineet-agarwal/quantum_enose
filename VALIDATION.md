@@ -130,6 +130,11 @@ Mol_A minus Baseline, per mode per spin:
 
 ## Energy-grid convergence of the spacer-device fingerprint — 2026-10-13
 
+**Superseded accuracy claim:** the table below establishes energy-spacing
+agreement at the stated SCBA tolerance only. It does not establish six-digit
+current accuracy. The tighter current checks in the repair section below
+change the currents and supersede their numerical acceptance.
+
 Fixed coupled-Baseline potential, Mol_A + bulk LO at D² = 0.015 on every
 undoped site, linear SCBA mixing, tolerance 1e-7:
 
@@ -147,3 +152,53 @@ wide), ZnO-level scattering on every undoped site broadens the narrow states to
 many meV, so the current is converged in energy spacing by ~1 meV. This covers
 the energy grid at fixed potential only; the single-mode model, the approximate
 scattering-charge closure and bias-stencil (d²I) convergence are not covered.
+
+## SCBA acceptance repair — 2026-10-13
+
+The previous audit identified an additional false acceptance: at 560 mV,
+Mol_A, dE = 0.5 meV, unguarded Anderson returned `converged=True` and passed
+contact conservation while its minimum out-scattering rate was -0.865 eV and
+its electron/hole spectral populations were negative. The default is now
+linear mixing in all three solvers. Optional Anderson rejects negative or
+nonfinite proposals, resets its history and falls back to the linear update.
+The final rates, populations and recomputed self-energy residual are checked
+before accepting convergence; negative warm-start rates are rejected.
+
+The archived SISPAD path is kept separately: `legacy_reproduction=True`
+(`--legacy-reproduction`) restores unguarded Anderson and the archived
+mix-then-stop order, and reproduces the golden data bit-exactly. It cannot be
+combined with a current requirement, Poisson or transverse integration. The
+guard's nonnegativity test uses a roundoff floor; an extra strict `>= 0`
+check, removed 2026-10-14, also rejected roundoff-level proposals.
+
+Final transport solves can require contact conservation inside the SCBA loop,
+so meeting a global self-energy tolerance alone no longer stops a failing
+current solve. The fixed-potential fingerprint audit now uses tolerance 1e-9,
+an iteration budget of 4000, explicit acceptance and fresh output. It exits
+nonzero if either member of a pair fails. Coupled results use validation
+version 3; old or failed cached points cannot bypass these checks.
+
+At the archived 576 mV spacer potential, dE = 0.5 meV, linear mixing:
+
+| Quantity | Baseline | Mol_A |
+|---|---:|---:|
+| Current per mode per spin | 0.986126 nA | 1.305111 nA |
+| Contact imbalance | 0.002729% | 0.002226% |
+| SCBA iterations | 1967 | 2098 |
+
+Both numerical checks pass; delta-I/I is **+32.347%**. These are transport
+checks at the supplied fixed potential, not a new Poisson or grid validation.
+The earlier 1e-7 Baseline solve had a 0.2068% imbalance and failed acceptance.
+
+Reproduce in a fresh output file:
+
+```bash
+venv/bin/python run/fixedU_fingerprint.py Mol_A .015 --biases 576 1504 \
+  --dE .0005 --tol 1e-9 --max-iter 4000
+```
+
+The original-device IETS refinement failure remains a separate numerical
+question. The spectrum audit now uses the tighter SCBA tolerance, records
+physical validity, saves completed measurements during long runs, and offers
+`--energy-offset .5` to test grid alignment. No spectrum is certified merely
+because the mixer or the current-conservation checks were repaired.

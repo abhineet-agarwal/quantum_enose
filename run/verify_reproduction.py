@@ -88,7 +88,8 @@ def main() -> int:
                 chi_diag=s["chi_def"], D0_sq_per_mode=s["D0_sq"],
                 hnu_idx_per_mode=s["hnu_idx"], N_bose_per_mode=s["N_bose"],
                 chi_per_mode=s["chi_list"], max_iter=SCBA_MAX_ITER,
-                tol=SCBA_TOL, mix=SCBA_MIX, eta=1e-12)
+                tol=SCBA_TOL, mix=SCBA_MIX, eta=1e-12, anderson_depth=8,
+                legacy_reproduction=True)
             rel = abs(res.I_right - IRref[j]) / max(abs(IRref[j]), 1e-30)
             ok = rel <= TOL_REL
             all_ok &= ok

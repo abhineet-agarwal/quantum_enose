@@ -41,12 +41,13 @@ def main():
     group = ap.add_mutually_exclusive_group()
     group.add_argument("--Ef", type=float, default=.02)
     group.add_argument("--donor-density", type=float, help="fixed ionized density, m^-3")
-    ap.add_argument("--scba-tol", type=float, default=1e-7)
-    ap.add_argument("--scba-max-iter", type=int, default=500)
+    ap.add_argument("--scba-tol", type=float, default=1e-9)
+    ap.add_argument("--scba-max-iter", type=int, default=4000)
     ap.add_argument("--anderson-depth", type=int, default=0,
-                    help="SCBA mixer history; 0 = linear mixing. Anderson/DIIS returns "
-                         "wrong-sign, unconverged currents at D^2 >= 0.01 and Mol_A has "
-                         "D0^2 = 0.1; with it the 0.5 meV / 16 mV result here moved 6 %%")
+                    help="0 = linear mixing (default); >=2 = guarded Anderson history")
+    ap.add_argument("--energy-offset", type=float, default=0.,
+                    help="shift the energy samples by this fraction of dE (0 <= offset < 1); "
+                         "use 0.5 to test sensitivity to grid alignment")
     ap.add_argument("--rtol", type=float, default=.05)
     ap.add_argument("--delta-I-atol", type=float, default=1e-13, help="A")
     ap.add_argument("--delta-D-atol", type=float, default=1e-10, help="A/V^2")
@@ -56,8 +57,8 @@ def main():
     if any(len(v) < 2 or any(x <= 0 for x in v) or any(a <= b for a, b in zip(v, v[1:]))
            for v in [args.energy_steps, args.bias_steps]):
         ap.error("Energy and bias steps must each contain at least two decreasing positive values")
-    if args.T <= 0 or args.E_max <= args.E_min or args.rtol <= 0:
-        ap.error("Require T > 0, E-max > E-min and rtol > 0")
+    if args.T <= 0 or args.E_max <= args.E_min or args.rtol <= 0 or not 0 <= args.energy_offset < 1:
+        ap.error("Require T > 0, E-max > E-min, rtol > 0 and 0 <= energy-offset < 1")
     output = args.output or Path("results") / ("validation_" + dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")) / "spectrum.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     # Reserve before doing expensive work; never replace a previous report.
@@ -68,10 +69,11 @@ def main():
     kt = .02585*args.T/300
     ef = args.Ef if args.donor_density is None else fermi_level_from_density(
         args.donor_density, kt, MATERIALS["ZnO"]["m_eff"]*_M0)
+    config = vars(args).copy(); config["output"] = str(output); config["Ef_used"] = ef
     biases = sorted({round(c+s*h, 12) for c in args.centers for h in args.bias_steps for s in (-1, 0, 1)})
     currents, rows, spectra = {}, [], []
     for de in args.energy_steps:
-        E = np.arange(args.E_min, args.E_max + de/2, de)
+        E = np.arange(args.E_min + args.energy_offset*de, args.E_max + de/2, de)
         for mol in dict.fromkeys(["Baseline", *args.molecules]):
             D, hi, nb, ch, chl = build_phonon_modes(mol, de, kt, chi, 1, 1, UB=UB)
             for V in biases:
@@ -80,12 +82,17 @@ def main():
                     t0=t0, Ef=ef, kT=kt, chi_diag=ch, D0_sq_per_mode=D,
                     hnu_idx_per_mode=hi, N_bose_per_mode=nb, chi_per_mode=chl,
                     max_iter=args.scba_max_iter, tol=args.scba_tol, mix=.3, method="rgf",
-                    anderson_depth=args.anderson_depth)
+                    anderson_depth=args.anderson_depth, current_rtol=2e-3)
                 diag = current_diagnostics(r.I_left, r.I_right, r.converged)
                 row = dict(dE=de, molecule=mol, V=V, I_L=r.I_left, I_R=r.I_right,
                            scba_converged=r.converged, iters=r.iters_used,
+                           physical_valid=r.physical_valid, self_energy_residual=r.self_energy_residual,
+                           mixer_fallbacks=r.mixer_fallbacks, solver_validation_version=3,
                            **{k: v.item() for k, v in diag.items()})
                 rows.append(row)
+                # Keep completed measurements if a long refinement is interrupted.
+                output.write_text(json.dumps(dict(status="running", passed=False,
+                    settings=config, currents=rows, spectra=spectra), indent=2, allow_nan=False)+"\n")
                 currents[de, mol, V] = r.I_right
                 if not args.quiet:
                     print(f"dE={de*1e3:g} meV {mol} V={V:.4f}: {r.I_right*1e9:.6f} nA "
@@ -118,11 +125,10 @@ def main():
             checks.append(compare(find(args.energy_steps[-1], args.bias_steps[-2]),
                                   find(args.energy_steps[-1], args.bias_steps[-1]), "bias"))
     passed = all(r["current_valid"] for r in rows) and all(c["passed"] for c in checks)
-    config = vars(args).copy(); config["output"] = str(output); config["Ef_used"] = ef
     report = dict(status="complete", passed=passed,
                   scope="selected fixed-potential stencils; single transverse mode per spin",
                   settings=config, currents=rows, spectra=spectra, checks=checks,
-                  untested=["energy-window extent", "spatial grid", "transverse coupling/integration",
+                  untested=["other energy-grid alignments", "energy-window extent", "spatial grid", "transverse coupling/integration",
                             "other biases", "electrostatic model", "experimental detectability"])
     output.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
     print(f"{'PASS' if passed else 'FAIL'}: molecular-spectrum refinement checks; {output}")

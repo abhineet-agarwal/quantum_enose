@@ -42,6 +42,11 @@ def test_plot_gate_rejects_uncomputed_device_current_and_unvalidated_spectrum():
     with pytest.raises(ValueError, match="grid validation"):
         require_plot_data(d, "I_R")
     require_plot_data(d, "I_R", allow_unvalidated=True)
+    d["spectrum_grid_validated"] = True
+    with pytest.raises(ValueError, match="rates/populations"):
+        require_plot_data(d, "I_R")
+    d["physical_valid"] = np.ones(3, dtype=bool)
+    require_plot_data(d, "I_R")
 
 
 def test_sweep_saves_failure_diagnostics_and_preserves_existing_results(tmp_path):
@@ -59,6 +64,39 @@ def test_sweep_saves_failure_diagnostics_and_preserves_existing_results(tmp_path
         assert not np.all(d["numerical_valid"])
         assert not bool(d["spectrum_grid_validated"])
         assert np.all(np.isnan(d["I_device"]))
+        assert int(d["anderson_depth"]) == 0
+        assert int(d["solver_validation_version"]) == 3
+        assert d["physical_valid"].shape == d["V"].shape
     with pytest.raises(FileExistsError):
         run_sweep(**kw)
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("version, converged", [(2, True), (3, False)])
+def test_coupled_resume_rejects_old_or_failed_cached_points(tmp_path, version, converged):
+    from argparse import Namespace
+    from run.sc_coupled_sweep import sweep, out_path
+    args = Namespace(out_dir=str(tmp_path), mol="Baseline", d2=.015, tag="")
+    np.savez(out_path(args, "up"), **{"576": np.array(dict(
+        info=dict(validation_version=version), converged=converged, U=np.zeros(3)), dtype=object)})
+    with pytest.raises(RuntimeError, match="lacks current validation"):
+        sweep(args, "up", [.576], None, None, None)
+
+
+def test_fixed_potential_audit_fails_on_imbalanced_pair_and_preserves_output(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    import run.fixedU_fingerprint as audit
+    source, output = tmp_path/"source.npz", tmp_path/"audit.json"
+    np.savez(source, **{"576": np.array(dict(U=np.zeros(audit.sw.bc.Np)), dtype=object)})
+    monkeypatch.setattr(audit.sw, "scba", lambda *a, **k: SimpleNamespace(
+        I_left=-1e-9, I_right=1.01e-9, iters_used=10, converged=True,
+        physical_valid=True, self_energy_residual=1e-10, mixer_fallbacks=0))
+    monkeypatch.setattr("sys.argv", ["audit", "--source", str(source), "--output", str(output), "--quiet"])
+    assert audit.main() == 1
+    data = json.loads(output.read_text())
+    assert not data["passed"] and not data["pairs"][0]["numerical_valid"]
+    before = output.read_bytes()
+    with pytest.raises(FileExistsError):
+        audit.main()
+    assert output.read_bytes() == before

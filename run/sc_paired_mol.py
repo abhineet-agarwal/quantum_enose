@@ -28,7 +28,7 @@ import run.sc_scatter_sweep as sw
 
 MOL = sys.argv[1] if len(sys.argv) > 1 else "Mol_A"
 D2 = float(sys.argv[2]) if len(sys.argv) > 2 else 0.015
-TIGHT = dict(scba_tol=1e-5, poisson_tol=1e-5, final_tol=1e-7, final_max_iter=3000)
+TIGHT = dict(scba_tol=1e-5, poisson_tol=1e-5, final_tol=1e-9, final_max_iter=4000)
 FINE_LO, FINE_HI = 1.040, 1.376
 LO_MARGIN = 0.25
 OUTDIR = os.path.abspath(os.path.join(os.path.dirname(sw.bc.OUT), "..", "2026-10-07"))
@@ -42,7 +42,7 @@ def grid():
 
 
 def main():
-    out = os.path.join(OUTDIR, f"sc_paired_D2{D2:g}_{MOL}_validation_v2.npz")
+    out = os.path.join(OUTDIR, f"sc_paired_D2{D2:g}_{MOL}_validation_v3.npz")
     db = ({k: np.load(out, allow_pickle=True)[k].item() for k in np.load(out).files}
           if os.path.exists(out) else {})
     ph = {"Baseline": sw.phonons(D2, "Baseline"), MOL: sw.phonons(D2, MOL)}
@@ -54,6 +54,8 @@ def main():
     for V in Vs:
         key = f"{V*1e3:.0f}"
         if key in db:
+            if not (db[key]["Baseline"].get("converged", False) and db[key]["mol"].get("converged", False)):
+                raise RuntimeError(f"Preserving failed cached pair {key}; choose a fresh output")
             U = db[key]["Baseline"]["U"]
             sig = {"Baseline": None, MOL: None}
             continue
@@ -78,6 +80,8 @@ def main():
               f"dI {dI*1e9:+8.4f} (contact half-defects sum {dIe*1e9:.4f}) nA ({100*dI/max(abs(row['Baseline']['I']),1e-30):+6.2f} %)  "
               f"dU_well {(row[MOL]['U_well']-row['Baseline']['U_well'])*1e3:+6.2f} meV{ok}  "
               f"[{db[key]['secs']/60:.1f} min]", flush=True)
+        if ok:
+            raise RuntimeError(f"Paired solve failed numerical checks at {key} mV; diagnostics saved to {out}")
     print("[done]", flush=True)
 
 

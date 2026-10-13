@@ -31,7 +31,7 @@ VPTS="${1:-51}"
 OUTDIR="${2:-results/reproduce_$(date +%F)}"
 DEVICE="ZnO_MgZnO_symmetric"
 COMMON=(--device "$DEVICE" --V-min 0 --V-max 0.8 --V-points "$VPTS"
-        --scba-mix 0.3 --scba-max-iter 100 --scba-tol 1e-4 --Ef 0.02
+        --scba-mix 0.3 --anderson-depth 8 --legacy-reproduction --scba-max-iter 100 --scba-tol 1e-4 --Ef 0.02
         --allow-unconverged --out-dir "$OUTDIR")
 
 mkdir -p "$OUTDIR"

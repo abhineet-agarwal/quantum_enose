@@ -3,7 +3,7 @@
 The executable model is a longitudinal effective-mass tight-binding RTD with
 local diagonal phonon SCBA in one transverse channel. At every bias the code
 solves the retarded Green function and the contact-plus-phonon Keldysh equations,
-then recomputes observables after the final self-energy update. Bulk LO and
+then recomputes and validates observables at the returned self-energy. Bulk LO and
 synthetic molecular modes have separate longitudinal envelopes. The production
 SCBA uses only the imaginary broadening part of the retarded phonon self-energy;
 this is a model approximation, not a general causal self-energy reconstruction.
@@ -52,6 +52,22 @@ New sweep defaults use 500 SCBA iterations, tolerance 1e-7; Poisson defaults use
 1000 iterations and 1e-5 eV step/unscreened-residual tolerances. These defaults
 are safeguards, not a promise of convergence. Current conservation uses an
 absolute 1e-14 A floor plus 0.2% relative tolerance.
+
+All three SCBA implementations default to convex linear mixing. Optional DIIS
+rejects negative/nonfinite rate proposals and clears its history before falling
+back to the linear update. The actual returned diagonal rates and populations
+must be real, finite and nonnegative up to roundoff, and their recomputed SCBA
+residual must meet the requested tolerance. Invalid warm starts are rejected.
+Final transport callers set `current_rtol` so iteration continues, within the
+iteration limit, until both the self-energy and contact-current criteria pass.
+Charge-only inner solves can omit this extra current criterion. New output
+records physical validity, final self-energy residual and mixer fallbacks;
+coupled cached results from before validation version 3 cannot be resumed.
+
+The spacer fingerprint and spectrum audits use a 1e-9 SCBA tolerance and up to
+4000 iterations. In the spacer model a global 1e-7 self-energy residual could
+still leave a ~0.2% current imbalance. Tightening it changes the reported
+fingerprint slightly; energy-spacing agreement alone did not detect this.
 
 The spectrum gate compares molecular current differences and second derivatives
 on the finest two energy grids, and derivatives on the finest two voltage

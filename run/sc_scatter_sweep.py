@@ -63,7 +63,8 @@ def window(V, lo_margin):
     return np.arange(V / 2 - lo_margin, bc.EF + V / 2 + 12 * bc.kT, DE_SCBA)
 
 
-def scba(V, U, E, ph, sigma_init=None, tol=1e-3, max_iter=60):
+def scba(V, U, E, ph, sigma_init=None, tol=1e-3, max_iter=60, require_current=False,
+         anderson_depth=0):
     D0, hi, Nb, chd, chl = ph
     on = D0 is not None
     return run_rank1_keldysh_single_bias_lowmem(
@@ -78,7 +79,8 @@ def scba(V, U, E, ph, sigma_init=None, tol=1e-3, max_iter=60):
         # at D2 >= 0.01 (finding-patil-gamma-anderson); at 0.015 it gave
         # -0.08 nA at 320 mV where linear mixing converges to +0.22 nA.
         chi_per_mode=chl if on else None, max_iter=max_iter, tol=tol, mix=0.3, eta=1e-12,
-        sigma_init=sigma_init, anderson_depth=0, method="rgf")
+        sigma_init=sigma_init, anderson_depth=anderson_depth, method="rgf",
+        current_rtol=2e-3 if require_current else None)
 
 
 def correction(V, U, ph, lo_margin, sigma_init):
@@ -176,14 +178,15 @@ def solve_bias(V, U, dn, ph, lo_margin, sigma_prev):
     converged = hist[-1]["resid"] < OUTER_TOL_RES and dU < OUTER_TOL_U
     # The density correction tolerates a loose inner solve; the current does
     # not: off resonance it is a small difference of large contact flows.
-    rf = scba(V, U, window(V, lo_margin), ph, sigma, tol=1e-5, max_iter=300)
+    rf = scba(V, U, window(V, lo_margin), ph, sigma, tol=1e-5, max_iter=300,
+              require_current=True)
     final = dict(I_R=rf.I_right, I_L=rf.I_left, I_mode=0.5 * (rf.I_right - rf.I_left),
                  I_err=0.5 * abs(rf.I_right + rf.I_left), iters=rf.iters_used, conv=rf.converged)
     return U, dn, sigma, hist, converged, I_bal, I_dev_bal, final
 
 
 def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-5, poisson_tol=1e-5,
-                       final_tol=1e-5, final_max_iter=300):
+                       final_tol=1e-9, final_max_iter=4000):
     """Windowed single-mode-ratio charge correction inside every Poisson step.
 
     This is an approximate charge model: the ratio n_SCBA/n_ballistic at one
@@ -219,16 +222,19 @@ def solve_bias_coupled(V, U, ph, lo_margin, sigma_prev, scba_tol=1e-5, poisson_t
         sc, I_bal, I_dev_bal = poisson(V, U, None, correction_fn=corr)
     finally:
         bc.POISSON_TOL = tol_saved
-    rf = scba(V, sc.U, E, ph, state["sigma"], tol=final_tol, max_iter=final_max_iter)
+    rf = scba(V, sc.U, E, ph, state["sigma"], tol=final_tol, max_iter=final_max_iter,
+              require_current=True)
     final = dict(I_R=rf.I_right, I_L=rf.I_left, I_mode=0.5 * (rf.I_right - rf.I_left),
-                 I_err=0.5 * abs(rf.I_right + rf.I_left), iters=rf.iters_used, conv=rf.converged)
+                 I_err=0.5 * abs(rf.I_right + rf.I_left), iters=rf.iters_used, conv=rf.converged,
+                 physical_valid=rf.physical_valid, self_energy_residual=rf.self_energy_residual,
+                 mixer_fallbacks=rf.mixer_fallbacks, solver_validation_version=3)
     final.update({k: v.item() for k, v in current_diagnostics(
         rf.I_left, rf.I_right, rf.converged).items()})
     # Keep I_err for old readers, but it is only half the conservation defect.
     final["error_kind"] = "contact_conservation_defect_not_statistical_uncertainty"
     info = dict(poisson_iters=sc.poisson_iters, poisson_conv=sc.poisson_converged,
                 poisson_residual_eV=sc.poisson_residual_eV, charge_converged=sc.charge_converged,
-                density_model="windowed_single_mode_ratio", validation_version=2,
+                density_model="windowed_single_mode_ratio", validation_version=3,
                 numerical_valid=bool(sc.poisson_converged and final["current_valid"]),
                 dU_final=sc.dU_final, corr_calls=state["calls"], scba_iters=state["scba_iters"],
                 secs=time.time() - t)
