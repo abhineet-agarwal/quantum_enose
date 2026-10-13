@@ -127,3 +127,23 @@ Mol_A minus Baseline, per mode per spin:
   curvature would need spacing well below the E1 linewidth.
 
 "Stable to ±5 %" is the spread of the last refinements, not an error bound.
+
+## Energy-grid convergence of the spacer-device fingerprint — 2026-10-13
+
+Fixed coupled-Baseline potential, Mol_A + bulk LO at D² = 0.015 on every
+undoped site, linear SCBA mixing, tolerance 1e-7:
+
+| spacing | Mol_A current at 576 mV |
+|---|---:|
+| 4 meV | 1.29319711 nA |
+| 2 meV | 1.30377999 nA |
+| 1 meV | 1.30388337 nA |
+| 0.5 meV | 1.30388641 nA |
+| 0.2, 0.1 meV | 1.3039 nA (dI/I = +32.36 % on all three of 0.5/0.2/0.1 meV) |
+
+At 1504 mV dI/I = +41.14 % on all three of 0.5/0.2/0.1 meV. Unlike the
+published device (weak bulk coupling confined to barriers + well, E1 134 µeV
+wide), ZnO-level scattering on every undoped site broadens the narrow states to
+many meV, so the current is converged in energy spacing by ~1 meV. This covers
+the energy grid at fixed potential only; the single-mode model, the approximate
+scattering-charge closure and bias-stencil (d²I) convergence are not covered.

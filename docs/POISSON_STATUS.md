@@ -11,6 +11,9 @@
 > Contact imbalance is not a statistical uncertainty: the prior sigma
 > significance claims are withdrawn. The +30% Mol_A result remains evidence
 > within the approximate model, not a validated device-level sensitivity.
+> **Energy grid (2026-10-13):** at fixed potential the Mol_A current at 576 mV is
+> converged to 6 digits by 1 meV spacing (+32.36 % at 0.5/0.2/0.1 meV; +41.14 % at
+> 1504 mV) because ZnO-level scattering broadens the narrow states. See VALIDATION.md.
 
 
 *Branch `feature/poisson-scf`. Current as of 2026-10-12. This document supersedes
